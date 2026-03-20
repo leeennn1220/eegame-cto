@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Block Blast - eegame</title>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #1a1a2e;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex; flex-direction: column; align-items: center;
+            touch-action: none; /* Prevent scroll on touch */
+            overflow: hidden;
+            user-select: none;
+        }
+        h1 { margin: 15px 0 5px 0; color: #00d2ff; font-size: 24px; text-shadow: 0 0 10px #00d2ff; }
+        #score { font-size: 20px; font-weight: bold; color: #ff007f; margin-bottom: 15px; }
+        #gameArea { position: relative; }
+        canvas {
+            display: block;
+            background-color: #16213e;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        #gameOver {
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(26, 26, 46, 0.9);
+            display: none; flex-direction: column;
+            align-items: center; justify-content: center;
+            border-radius: 12px; backdrop-filter: blur(5px);
+        }
+        #gameOver.visible { display: flex; }
+        button {
+            padding: 12px 30px; font-size: 18px; font-weight: bold;
+            color: #1a1a2e; background: #00d2ff; border: none; border-radius: 25px;
+            cursor: pointer; box-shadow: 0 0 15px #00d2ff; margin-top: 15px;
+        }
+        button:active { transform: scale(0.95); }
+    </style>
+</head>
+<body>
+    <h1>🟩 方塊爆破 (Block Blast)</h1>
+    <div id="score">分數: 0</div>
+    <div id="gameArea">
+        <!-- 360x520 allows for an 8x8 grid (e.g. 320x320) + tray area below -->
+        <canvas id="gameCanvas" width="360" height="520"></canvas>
+        <div id="gameOver">
+            <h2 style="color: #ff007f;">沒有空間了！</h2>
+            <p>最終分數: <span id="finalScore">0</span></p>
+            <button onclick="startGame()">再玩一局</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const finalScoreEl = document.getElementById('finalScore');
+        const gameOverEl = document.getElementById('gameOver');
+
+        const GRID_SIZE = 8;
+        const CELL_SIZE = 40;
+        const GRID_OFFSET_X = (canvas.width - (GRID_SIZE * CELL_SIZE)) / 2;
+        const GRID_OFFSET_Y = 15;
+        const TRAY_Y = GRID_OFFSET_Y + (GRID_SIZE * CELL_SIZE) + 40;
+
+        let board = [];
+        let score = 0;
+        let trayShapes = [];
+        let draggingShape = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        const SHAPES_DATA = [
+            { color: '#ff3366', blocks: [[0,0]] }, 
+            { color: '#33ccff', blocks: [[0,0],[1,0]] }, 
+            { color: '#33ccff', blocks: [[0,0],[0,1]] }, 
+            { color: '#66ff66', blocks: [[0,0],[1,0],[2,0]] }, 
+            { color: '#66ff66', blocks: [[0,0],[0,1],[0,2]] }, 
+            { color: '#ffcc00', blocks: [[0,0],[1,0],[0,1],[1,1]] }, 
+            { color: '#cc66ff', blocks: [[0,0],[1,0],[2,0],[0,1],[0,2]] }, 
+            { color: '#cc66ff', blocks: [[2,0],[2,1],[0,2],[1,2],[2,2]] }, 
+            { color: '#ff9933', blocks: [[0,0],[1,0],[2,0],[1,1],[1,2]] }, 
+            { color: '#ff9933', blocks: [[0,0],[0,1],[0,2],[1,2],[2,2]] },
+            { color: '#33ffcc', blocks: [[0,0],[1,0],[2,0],[3,0]] }, 
+            { color: '#33ffcc', blocks: [[0,0],[0,1],[0,2],[0,3]] }, 
+            { color: '#ff44aa', blocks: [[0,0],[1,0],[1,1],[2,1]] } // Z shape
+        ];
+
+        function initBoard() {
+            board = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                board[r] = new Array(GRID_SIZE).fill(null);
+            }
+        }
+
+        function spawnTray() {
+            trayShapes = [];
+            const spacing = canvas.width / 3;
+            for (let i = 0; i < 3; i++) {
+                const sData = SHAPES_DATA[Math.floor(Math.random() * SHAPES_DATA.length)];
+                trayShapes.push({
+                    data: sData,
+                    homeX: (spacing * i) + spacing / 2,
+                    homeY: TRAY_Y + 50,
+                    x: (spacing * i) + spacing / 2,
+                    y: TRAY_Y + 50,
+                    scale: 0.55,
+                    placed: false
+                });
+            }
+        }
+
+        function startGame() {
+            initBoard();
+            score = 0;
+            updateScore(0);
+            gameOverEl.classList.remove('visible');
+            spawnTray();
+            draw();
+        }
+
+        function updateScore(add) {
+            score += add;
+            scoreEl.innerText = '分數: ' + score;
+        }
+
+        function drawRoundRect(x, y, w, h, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, radius);
+            ctx.fill();
+            // inner glow to make it look 3d
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath();
+            ctx.roundRect(x+2, y+2, w-4, h/3, radius-2);
+            ctx.fill();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Board Grid
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const bx = GRID_OFFSET_X + c * CELL_SIZE;
+                    const by = GRID_OFFSET_Y + r * CELL_SIZE;
+                    if (board[r][c]) {
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, board[r][c]);
+                    } else {
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, '#0f172a');
+                    }
+                }
+            }
+
+            // Draw shapes in tray
+            trayShapes.forEach((ts) => {
+                if (ts.placed || ts === draggingShape) return;
+                drawShape(ts.data, ts.x, ts.y, ts.scale);
+            });
+
+            // Draw current dragging shape and hover shadow
+            if (draggingShape) {
+                let p = getPivotPosition(draggingShape);
+                if (canPlace(draggingShape.data, p.col, p.row)) {
+                    // Draw shadow
+                    draggingShape.data.blocks.forEach(b => {
+                        const bx = GRID_OFFSET_X + (p.col + b[0]) * CELL_SIZE;
+                        const by = GRID_OFFSET_Y + (p.row + b[1]) * CELL_SIZE;
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, 'rgba(255,255,255,0.2)');
+                    });
+                }
+                drawShape(draggingShape.data, draggingShape.x, draggingShape.y, draggingShape.scale);
+            }
+        }
+
+        function drawShape(sData, cx, cy, scale) {
+            const size = CELL_SIZE * scale;
+            let minX = 99, minY = 99, maxX = -99, maxY = -99;
+            sData.blocks.forEach(b => {
+                minX = Math.min(minX, b[0]); maxX = Math.max(maxX, b[0]);
+                minY = Math.min(minY, b[1]); maxY = Math.max(maxY, b[1]);
+            });
+            const ox = cx - ((minX + maxX + 1) * size) / 2;
+            const oy = cy - ((minY + maxY + 1) * size) / 2;
+
+            sData.blocks.forEach(b => {
+                drawRoundRect(ox + b[0] * size, oy + b[1] * size, size - 2, size - 2, 4 * scale, sData.color);
+            });
+        }
+
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function handleStart(e) {
+            if (e.cancelable) e.preventDefault();
+            if (gameOverEl.classList.contains('visible')) return;
+            const pos = getEventPos(e);
+
+            for (let i = trayShapes.length - 1; i >= 0; i--) {
+                const ts = trayShapes[i];
+                if (ts.placed) continue;
+                // Hitbox logic
+                if (Math.abs(pos.x - ts.x) < 50 && Math.abs(pos.y - ts.y) < 50) {
+                    draggingShape = ts;
+                    ts.scale = 0.95; // Enlarge slightly
+                    dragOffsetX = ts.x - pos.x;
+                    dragOffsetY = ts.y - pos.y - 50; // Offset above finger
+                    ts.x = pos.x + dragOffsetX;
+                    ts.y = pos.y + dragOffsetY;
+                    draw();
+                    break;
+                }
+            }
+        }
+
+        function handleMove(e) {
+            if (!draggingShape) return;
+            if (e.cancelable) e.preventDefault();
+            const pos = getEventPos(e);
+            draggingShape.x = pos.x + dragOffsetX;
+            draggingShape.y = pos.y + dragOffsetY;
+            draw();
+        }
+
+        function getPivotPosition(shape) {
+            let minX = 99, minY = 99, maxX = -99, maxY = -99;
+            shape.data.blocks.forEach(b => {
+                minX = Math.min(minX, b[0]); maxX = Math.max(maxX, b[0]);
+                minY = Math.min(minY, b[1]); maxY = Math.max(maxY, b[1]);
+            });
+            let col = Math.round((shape.x - (minX + maxX)/2 * CELL_SIZE - GRID_OFFSET_X) / CELL_SIZE);
+            let row = Math.round((shape.y - (minY + maxY)/2 * CELL_SIZE - GRID_OFFSET_Y) / CELL_SIZE);
+            return { col, row };
+        }
+
+        function handleEnd(e) {
+            if (!draggingShape) return;
+            if (e.cancelable) e.preventDefault();
+            
+            let p = getPivotPosition(draggingShape);
+
+            if (canPlace(draggingShape.data, p.col, p.row)) {
+                placeShape(draggingShape.data, p.col, p.row);
+                draggingShape.placed = true;
+                draggingShape = null;
+                updateScore(10); 
+                
+                checkClears();
+
+                if (trayShapes.every(ts => ts.placed)) {
+                    spawnTray();
+                }
+                
+                setTimeout(() => {
+                    if (checkGameOver()) {
+                        finalScoreEl.innerText = score;
+                        gameOverEl.classList.add('visible');
+                    } else {
+                        draw(); // redraw fresh hints occasionally
+                    }
+                }, 50);
+            } else {
+                // Snap back to tray
+                draggingShape.x = draggingShape.homeX;
+                draggingShape.y = draggingShape.homeY;
+                draggingShape.scale = 0.55;
+                draggingShape = null;
+            }
+            draw();
+        }
+
+        function canPlace(sData, pCol, pRow) {
+            for (let b of sData.blocks) {
+                const c = pCol + b[0];
+                const r = pRow + b[1];
+                if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return false;
+                if (board[r][c] !== null) return false;
+            }
+            return true;
+        }
+
+        function placeShape(sData, pCol, pRow) {
+            for (let b of sData.blocks) {
+                board[pRow + b[1]][pCol + b[0]] = sData.color;
+            }
+        }
+
+        function checkClears() {
+            let rowsToClear = [];
+            let colsToClear = [];
+
+            for (let r = 0; r < GRID_SIZE; r++) {
+                if (board[r].every(cell => cell !== null)) rowsToClear.push(r);
+            }
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let colFull = true;
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    if (board[r][c] === null) { colFull = false; break; }
+                }
+                if (colFull) colsToClear.push(c);
+            }
+
+            rowsToClear.forEach(r => {
+                for (let c = 0; c < GRID_SIZE; c++) board[r][c] = null;
+            });
+            colsToClear.forEach(c => {
+                for (let r = 0; r < GRID_SIZE; r++) board[r][c] = null;
+            });
+
+            const totalClears = rowsToClear.length + colsToClear.length;
+            if (totalClears > 0) {
+                updateScore(totalClears * 100); 
+            }
+        }
+
+        function checkGameOver() {
+            const unplaced = trayShapes.filter(ts => !ts.placed);
+            if (unplaced.length === 0) return false;
+
+            for (let ts of unplaced) {
+                let canFitAnywhere = false;
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        if (canPlace(ts.data, c, r)) {
+                            canFitAnywhere = true;
+                            break;
+                        }
+                    }
+                    if (canFitAnywhere) break;
+                }
+                if (canFitAnywhere) return false; 
+            }
+            return true; 
+        }
+
+        canvas.addEventListener('mousedown', handleStart);
+        canvas.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+
+        canvas.addEventListener('touchstart', handleStart, {passive: false});
+        canvas.addEventListener('touchmove', handleMove, {passive: false});
+        canvas.addEventListener('touchend', handleEnd, {passive: false});
+
+        startGame();
+    </script>
+</body>
+</html>
