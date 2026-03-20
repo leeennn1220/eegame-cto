@@ -1,0 +1,762 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>檸檬磚塊 - 對戰版</title>
+    <!-- 引入 PeerJS 用來做免後端即時連線 -->
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body {
+            margin: 0; padding: 0;
+            background-color: #1a1a2e;
+            color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+            touch-action: none; 
+            overflow: hidden;
+            user-select: none;
+            -webkit-user-select: none;
+            height: 100vh;
+        }
+        
+        /* UI Layer (選單與連線畫面) */
+        #uiLayer { position: absolute; top:0; left:0; width:100%; height:100%; z-index: 200; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 10vh; }
+        .hidden { display: none !important; }
+        .menu-box { background: #16213e; padding: 20px; border-radius: 12px; text-align: center; margin: 10px; width: 85%; max-width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);}
+        input { padding: 12px; border-radius: 8px; border: 2px solid #00d2ff; background: #0f172a; color: #fff; text-align: center; width: 80%; font-size: 18px; margin-bottom: 15px; font-weight: bold;}
+        button { padding: 12px 30px; font-size: 18px; font-weight: bold; color: #1a1a2e; background: #00d2ff; border: none; border-radius: 25px; cursor: pointer; box-shadow: 0 0 15px #00d2ff; margin: 8px 5px; width: 80%;}
+        button:active { transform: scale(0.95); }
+        button.red { background: #ff3366; box-shadow: 0 0 15px #ff3366; color: white;}
+        
+        #leaderboardList { text-align: left; margin-top: 20px; font-size: 16px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; max-height: 200px; overflow-y: auto;}
+        
+        /* 遊戲主畫面 */
+        .hud { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px 25px; box-sizing: border-box; background: rgba(0,0,0,0.5); position: absolute; top: 0; z-index: 10; font-size: 18px; font-weight: bold;}
+        #gameArea { position: relative; display: flex; justify-content: center; width: 100%; margin-top: 60px;}
+        canvas { display: block; background-color: #16213e; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        
+        #floatingText {
+            position: absolute; 
+            font-size: 32px; 
+            font-weight: bold; 
+            opacity: 0; 
+            pointer-events: none; 
+            z-index: 100; 
+            left: 50%; 
+            top: 40%; 
+            transform: translate(-50%, -50%);
+            text-align: center;
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 選單層 -->
+    <div id="uiLayer">
+        <h1 style="color:#ffcc00; text-shadow:0 0 20px #ffcc00; font-size: 32px; margin-bottom: 30px;">🍋 檸檬磚塊</h1>
+        
+        <!-- 主選單 -->
+        <div id="mainMenu" class="menu-box">
+            <input type="text" id="playerName" placeholder="輸入你的大名" maxlength="10">
+            <button onclick="createRoom()">🏆 建立對戰</button>
+            <button onclick="showJoinMenu()">⚔️ 加入對戰</button>
+            
+            <div id="leaderboardList">
+                <h3 style="margin-top:0; color:#00d2ff; text-align:center;">🏅 本地排行榜</h3>
+                <ol id="lbList" style="padding-left:25px; margin:0; color:#ddd;"></ol>
+            </div>
+        </div>
+
+        <!-- 成為房主 -->
+        <div id="hostMenu" class="menu-box hidden">
+            <h3 style="color:#ddd;">請朋友輸入此代碼：</h3>
+            <h1 id="roomCodeText" style="color:#00d2ff; letter-spacing:5px; font-size: 40px; margin: 10px 0;">連線中...</h1>
+            <p style="color:#aaa; font-size: 14px;">等待對手加入...(請保持畫面開啟)</p>
+            <button class="red" onclick="cancelRoom()">取消 / 返回</button>
+        </div>
+
+        <!-- 加入對戰 -->
+        <div id="joinMenu" class="menu-box hidden">
+            <h3 style="color:#ddd;">輸入對手代碼：</h3>
+            <input type="text" id="joinCodeInput" placeholder="5碼英數代碼" maxlength="5" style="text-transform:uppercase; letter-spacing: 3px;">
+            <button onclick="joinRoom()">連線開戰！</button>
+            <button class="red" onclick="cancelRoom()">取消 / 返回</button>
+            <p id="joinStatus" style="color:#ff3366; font-size:14px;"></p>
+        </div>
+
+        <!-- 結算畫面 -->
+        <div id="gameOverScreen" class="menu-box hidden">
+            <h1 id="matchResult" style="color:#fff; font-size: 40px;">時間到！</h1>
+            <div id="matchStats" style="font-size: 20px; line-height: 1.8; margin-bottom: 20px; color: #ddd;"></div>
+            <button onclick="location.reload()">回主選單</button>
+        </div>
+    </div>
+
+    <!-- 遊戲主畫面 -->
+    <div id="gameUI" class="hidden" style="width:100%; height:100%; position: relative;">
+        <div class="hud">
+            <div style="color:#00d2ff;">我: <span id="myScore">0</span></div>
+            <div style="color:#ffcc00; font-size: 24px;">⏱ <span id="timerText">60</span></div>
+            <div style="color:#ff3366;">對手: <span id="enemyScore">0</span></div>
+        </div>
+        <div id="gameArea">
+            <canvas id="gameCanvas"></canvas>
+            <div id="floatingText">🍋 +500</div>
+        </div>
+    </div>
+
+    <script>
+        // ==== Global UI Logic ====
+        const playerNameInput = document.getElementById('playerName');
+        let myName = localStorage.getItem('lemon_name') || '';
+        playerNameInput.value = myName;
+
+        function renderLeaderboard() {
+            let lb = JSON.parse(localStorage.getItem('lemon_lb') || '[]');
+            const ul = document.getElementById('lbList');
+            ul.innerHTML = '';
+            if (lb.length === 0) {
+                ul.innerHTML = '<li style="color:#777; list-style:none; text-align:center;">尚無對戰紀錄</li>';
+                return;
+            }
+            lb.sort((a,b) => b.score - a.score);
+            lb.slice(0, 10).forEach(entry => {
+                let li = document.createElement('li');
+                li.innerHTML = `<span style="color:#fff; font-weight:bold;">${entry.name}</span> <span style="float:right; color:#ffcc00;">${entry.score}</span>`;
+                ul.appendChild(li);
+            });
+        }
+        renderLeaderboard();
+
+        function switchMenu(showId) {
+            ['mainMenu', 'hostMenu', 'joinMenu', 'gameOverScreen'].forEach(id => {
+                document.getElementById(id).classList.add('hidden');
+            });
+            document.getElementById(showId).classList.remove('hidden');
+        }
+
+        function cancelRoom() {
+            if (peer) peer.destroy();
+            switchMenu('mainMenu');
+        }
+
+        // ==== PeerJS WebRTC 連線系統 ====
+        let peer;
+        let conn;
+        let myScore = 0;
+        let enemyScore = 0;
+        let enemyFinalScore = -1;
+        let enemyFinalName = "";
+        let isMatchOver = false;
+
+        function initPeer() {
+            myName = playerNameInput.value.trim() || '無名氏';
+            localStorage.setItem('lemon_name', myName);
+            initAudio(); // 互動時先解鎖
+        }
+
+        function createRoom() {
+            initPeer();
+            switchMenu('hostMenu');
+            let code = Math.random().toString(36).substr(2, 5).toUpperCase();
+            document.getElementById('roomCodeText').innerText = '連線中...';
+            
+            peer = new Peer('lemon-' + code);
+            peer.on('open', id => {
+                document.getElementById('roomCodeText').innerText = code;
+            });
+            
+            peer.on('connection', connection => {
+                conn = connection;
+                setupConn(conn, true);
+            });
+            
+            peer.on('error', err => {
+                alert('連線伺服器忙碌，請重試！');
+                cancelRoom();
+            });
+        }
+
+        function showJoinMenu() {
+            initPeer();
+            switchMenu('joinMenu');
+        }
+
+        function joinRoom() {
+            initPeer();
+            document.getElementById('joinStatus').innerText = '嘗試連線中...';
+            let code = document.getElementById('joinCodeInput').value.toUpperCase().trim();
+            if(!code) return;
+            
+            peer = new Peer();
+            peer.on('open', id => {
+                conn = peer.connect('lemon-' + code);
+                conn.on('open', () => setupConn(conn, false));
+                conn.on('error', () => { document.getElementById('joinStatus').innerText = '連線失敗或找不到房間！'; });
+            });
+            peer.on('error', err => {
+                document.getElementById('joinStatus').innerText = '房間不存在或伺服器錯誤！';
+            });
+        }
+
+        function setupConn(connection, isHost) {
+            conn.on('data', data => {
+                if (data.type === 'start') startGameTimer();
+                else if (data.type === 'score') updateOpponentScore(data.value);
+                else if (data.type === 'penalty') receivePenalty(data.lines);
+                else if (data.type === 'report') finalizeMatch(data.finalScore, data.name);
+            });
+            
+            if (isHost) {
+                // 房主稍微延遲確保雙方通道穩定，然後發起開戰
+                document.getElementById('roomCodeText').innerText = '對手已連接！';
+                setTimeout(() => {
+                    conn.send({type: 'start'});
+                    startGameTimer();
+                }, 1000);
+            }
+        }
+
+        // ==== 遊戲控制系統 ====
+        let timerInt;
+        let gameTime = 60; // 60秒激戰
+
+        function startGameTimer() {
+            document.getElementById('uiLayer').classList.add('hidden');
+            document.getElementById('gameUI').classList.remove('hidden');
+            
+            initAudio();
+            initBoard();
+            myScore = 0;
+            enemyScore = 0;
+            isMatchOver = false;
+            updateScore(0);
+            spawnTray();
+            draw();
+            
+            // 開始倒數
+            timerInt = setInterval(() => {
+                if (isMatchOver) return;
+                gameTime--;
+                document.getElementById('timerText').innerText = gameTime;
+                
+                if (gameTime <= 10) document.getElementById('timerText').style.color = '#ff3366'; // 紅色警示
+                
+                if (gameTime <= 0) {
+                    clearInterval(timerInt);
+                    endMatch();
+                }
+            }, 1000);
+        }
+
+        function endMatch() {
+            isMatchOver = true;
+            document.getElementById('gameUI').classList.add('hidden');
+            document.getElementById('uiLayer').classList.remove('hidden');
+            switchMenu('gameOverScreen');
+            document.getElementById('matchResult').innerText = '結算中...';
+            document.getElementById('matchStats').innerHTML = `你 (${myName}):<br><span style="color:#00d2ff; font-size:30px; font-weight:bold;">${myScore}</span>`;
+            
+            // 存入本地榜單
+            let lb = JSON.parse(localStorage.getItem('lemon_lb') || '[]');
+            lb.push({name: myName, score: myScore});
+            localStorage.setItem('lemon_lb', JSON.stringify(lb));
+            
+            playSound('gameover');
+            
+            // 發送分數給對手
+            if (conn && conn.open) {
+                conn.send({type: 'report', finalScore: myScore, name: myName});
+            }
+            checkWinner();
+        }
+
+        function finalizeMatch(es, en) {
+            enemyFinalScore = es;
+            enemyFinalName = en || '無名氏';
+            checkWinner();
+        }
+
+        function checkWinner() {
+            if (!isMatchOver || enemyFinalScore === -1) return; // 雙方都還沒傳完資料
+            
+            let result = "平手！";
+            let color = "#fff";
+            if (myScore > enemyFinalScore) { result = "🏆 你贏了！"; color = "#66ff66"; }
+            else if (myScore < enemyFinalScore) { result = "💀 你輸了..."; color = "#ff3366"; }
+            
+            document.getElementById('matchResult').innerText = result;
+            document.getElementById('matchResult').style.color = color;
+            document.getElementById('matchStats').innerHTML = `
+                你 (${myName})：<span style="color:#00d2ff; font-weight:bold;">${myScore}</span><br>
+                敵 (${enemyFinalName})：<span style="color:#ff3366; font-weight:bold;">${enemyFinalScore}</span>
+            `;
+            
+            // 中斷連線
+            if (conn) conn.close();
+            if (peer) peer.destroy();
+        }
+
+        // ==== 音效系統 (Web Audio API) ==== 
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (!audioCtx.unlocked) {
+                const buffer = audioCtx.createBuffer(1, 1, 22050);
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+                source.start(0);
+                audioCtx.unlocked = true;
+            }
+        }
+        window.addEventListener('touchstart', initAudio, { once: true });
+        window.addEventListener('mousedown', initAudio, { once: true });
+
+        function playSound(type) {
+            initAudio();
+            if (!audioCtx || audioCtx.state === 'suspended') return;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            
+            if (type === 'drop') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+                gainNode.gain.setValueAtTime(0.15, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now); osc.stop(now + 0.1);
+            } else if (type === 'clear') {
+                osc.type = 'square'; osc.frequency.setValueAtTime(400, now); osc.frequency.setValueAtTime(800, now + 0.1); osc.frequency.setValueAtTime(1200, now + 0.2);
+                gainNode.gain.setValueAtTime(0.15, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            } else if (type === 'bonus') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.setValueAtTime(1400, now + 0.1); osc.frequency.setValueAtTime(2000, now + 0.2);
+                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now); osc.stop(now + 0.4);
+            } else if (type === 'gameover') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(50, now + 0.6);
+                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.6);
+                osc.start(now); osc.stop(now + 0.6);
+            } else if (type === 'pickup') {
+                osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(400, now + 0.05);
+                gainNode.gain.setValueAtTime(0.05, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.05);
+                osc.start(now); osc.stop(now + 0.05);
+            } else if (type === 'damage') {
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
+                gainNode.gain.setValueAtTime(0.3, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now); osc.stop(now + 0.3);
+            }
+        }
+
+        // ==== 滿版響應式版面計算 ====
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const screenMargin = 20;
+        let maxCanvasWidth = Math.min(window.innerWidth - screenMargin, 400); 
+        canvas.width = maxCanvasWidth;
+
+        const GRID_SIZE = 8;
+        const CELL_SIZE = Math.floor(canvas.width / GRID_SIZE);
+        canvas.width = CELL_SIZE * GRID_SIZE; 
+        const GRID_OFFSET_X = 0; 
+        const GRID_OFFSET_Y = 15;
+        const TRAY_Y = GRID_OFFSET_Y + (GRID_SIZE * CELL_SIZE) + 40;
+        
+        canvas.height = TRAY_Y + (CELL_SIZE * 3.5);
+
+        let board = [];
+        let itemsBoard = []; 
+        let trayShapes = [];
+        let draggingShape = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+
+        const SHAPES_DATA = [
+            { color: '#ff3366', blocks: [[0,0]] }, 
+            { color: '#33ccff', blocks: [[0,0],[1,0]] }, 
+            { color: '#33ccff', blocks: [[0,0],[0,1]] }, 
+            { color: '#66ff66', blocks: [[0,0],[1,0],[2,0]] }, 
+            { color: '#66ff66', blocks: [[0,0],[0,1],[0,2]] }, 
+            { color: '#ffcc00', blocks: [[0,0],[1,0],[0,1],[1,1]] }, 
+            { color: '#cc66ff', blocks: [[0,0],[1,0],[2,0],[0,1],[0,2]] }, 
+            { color: '#cc66ff', blocks: [[2,0],[2,1],[0,2],[1,2],[2,2]] }, 
+            { color: '#ff9933', blocks: [[0,0],[1,0],[2,0],[1,1],[1,2]] }, 
+            { color: '#ff9933', blocks: [[0,0],[0,1],[0,2],[1,2],[2,2]] },
+            { color: '#33ffcc', blocks: [[0,0],[1,0],[2,0],[3,0]] }, 
+            { color: '#33ffcc', blocks: [[0,0],[0,1],[0,2],[0,3]] }, 
+            { color: '#ff44aa', blocks: [[0,0],[1,0],[1,1],[2,1]] }
+        ];
+
+        function initBoard() {
+            board = [];
+            itemsBoard = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                board[r] = new Array(GRID_SIZE).fill(null);
+                itemsBoard[r] = new Array(GRID_SIZE).fill(null);
+            }
+        }
+
+        function spawnLemon() {
+            let emptyCells = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (board[r][c] === null && itemsBoard[r][c] === null) {
+                        emptyCells.push({r, c});
+                    }
+                }
+            }
+            if (emptyCells.length > 0) {
+                let currentLemons = 0;
+                itemsBoard.forEach(row => row.forEach(i => { if(i==='lemon') currentLemons++ }));
+                if (currentLemons < 2) {
+                    let randomCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                    itemsBoard[randomCell.r][randomCell.c] = 'lemon';
+                }
+            }
+        }
+
+        function spawnTray() {
+            trayShapes = [];
+            const spacing = canvas.width / 3;
+            for (let i = 0; i < 3; i++) {
+                const sData = SHAPES_DATA[Math.floor(Math.random() * SHAPES_DATA.length)];
+                trayShapes.push({
+                    data: sData,
+                    homeX: (spacing * i) + spacing / 2,
+                    homeY: TRAY_Y + (CELL_SIZE * 1.5),
+                    x: (spacing * i) + spacing / 2,
+                    y: TRAY_Y + (CELL_SIZE * 1.5),
+                    scale: 0.55,
+                    placed: false
+                });
+            }
+            spawnLemon();
+        }
+
+        function updateScore(add) {
+            myScore += add;
+            document.getElementById('myScore').innerText = myScore;
+            if (conn && conn.open && add > 0) {
+                conn.send({type: 'score', value: myScore});
+            }
+        }
+
+        function updateOpponentScore(val) {
+            enemyScore = val;
+            document.getElementById('enemyScore').innerText = enemyScore;
+        }
+
+        function receivePenalty(lines) {
+            if (isMatchOver) return;
+            showFloatingText(`⚠️ 受到攻擊 +${lines}!`, "#ff3366");
+            playSound('damage');
+            
+            for (let i = 0; i < lines; i++) {
+                // Shift up
+                for (let r = 0; r < GRID_SIZE - 1; r++) {
+                    board[r] = [...board[r+1]];
+                    itemsBoard[r] = [...itemsBoard[r+1]];
+                }
+                // Generate penalty row (Gray block) with 1 empty space
+                let newRow = new Array(GRID_SIZE).fill('#555555'); 
+                let hole = Math.floor(Math.random() * GRID_SIZE);
+                newRow[hole] = null;
+                board[GRID_SIZE - 1] = newRow;
+                itemsBoard[GRID_SIZE - 1] = new Array(GRID_SIZE).fill(null);
+            }
+            draw();
+            
+            // Check if penalty just caused game over (top line overflowed and we couldn't place, this handles naturally via checkGameOver logic if shapes can't be placed)
+        }
+
+        function showFloatingText(text, color="#ffcc00") {
+            const el = document.getElementById('floatingText');
+            el.innerText = text;
+            el.style.color = color;
+            el.style.textShadow = `0 0 15px ${color}, 0 0 5px #000`;
+            el.style.transition = 'none';
+            el.style.opacity = '1';
+            el.style.top = '50%';
+            
+            void el.offsetWidth;
+
+            el.style.transition = 'all 1.5s cubic-bezier(0.1, 0.8, 0.1, 1)';
+            el.style.opacity = '0';
+            el.style.top = '10%';
+        }
+
+        function drawRoundRect(x, y, w, h, radius, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.roundRect(x, y, w, h, radius);
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.beginPath();
+            ctx.roundRect(x+2, y+2, w-4, h/3, radius-2);
+            ctx.fill();
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const bx = GRID_OFFSET_X + c * CELL_SIZE;
+                    const by = GRID_OFFSET_Y + r * CELL_SIZE;
+                    
+                    if (!board[r][c]) {
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 4, '#0f172a');
+                    }
+                    
+                    if (itemsBoard[r][c] === 'lemon') {
+                        ctx.font = (CELL_SIZE * 0.6) + "px Arial";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillStyle = '#fff';
+                        ctx.fillText("🍋", bx + CELL_SIZE/2 - 1, by + CELL_SIZE/2 - 1);
+                    }
+
+                    if (board[r][c]) {
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, board[r][c]);
+                        if (itemsBoard[r][c] === 'lemon') {
+                            ctx.font = (CELL_SIZE * 0.45) + "px Arial";
+                            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                            ctx.fillText("🍋", bx + CELL_SIZE/2 - 1, by + CELL_SIZE/2 - 1);
+                        }
+                    }
+                }
+            }
+
+            trayShapes.forEach((ts) => {
+                if (ts.placed || ts === draggingShape) return;
+                drawShape(ts.data, ts.x, ts.y, ts.scale);
+            });
+
+            if (draggingShape) {
+                let p = getPivotPosition(draggingShape);
+                if (canPlace(draggingShape.data, p.col, p.row)) {
+                    draggingShape.data.blocks.forEach(b => {
+                        const bx = GRID_OFFSET_X + (p.col + b[0]) * CELL_SIZE;
+                        const by = GRID_OFFSET_Y + (p.row + b[1]) * CELL_SIZE;
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, 'rgba(255,255,255,0.3)');
+                    });
+                }
+                drawShape(draggingShape.data, draggingShape.x, draggingShape.y, draggingShape.scale);
+            }
+        }
+
+        function drawShape(sData, cx, cy, scale) {
+            const size = CELL_SIZE * scale;
+            let minX = 99, minY = 99, maxX = -99, maxY = -99;
+            sData.blocks.forEach(b => {
+                minX = Math.min(minX, b[0]); maxX = Math.max(maxX, b[0]);
+                minY = Math.min(minY, b[1]); maxY = Math.max(maxY, b[1]);
+            });
+            const ox = cx - ((minX + maxX + 1) * size) / 2;
+            const oy = cy - ((minY + maxY + 1) * size) / 2;
+
+            sData.blocks.forEach(b => {
+                drawRoundRect(ox + b[0] * size, oy + b[1] * size, size - 2, size - 2, 4 * scale, sData.color);
+            });
+        }
+
+        function getEventPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (clientX - rect.left) * scaleX,
+                y: (clientY - rect.top) * scaleY
+            };
+        }
+
+        function handleStart(e) {
+            if (isMatchOver) return;
+            initAudio(); 
+            if (e.cancelable) e.preventDefault();
+            const pos = getEventPos(e);
+
+            for (let i = trayShapes.length - 1; i >= 0; i--) {
+                const ts = trayShapes[i];
+                if (ts.placed) continue;
+                if (Math.abs(pos.x - ts.x) < 50 && Math.abs(pos.y - ts.y) < 50) {
+                    playSound('pickup'); 
+                    draggingShape = ts;
+                    ts.scale = 1.0; 
+                    dragOffsetX = 0; 
+                    dragOffsetY = -(CELL_SIZE * 3); 
+                    ts.x = pos.x + dragOffsetX;
+                    ts.y = pos.y + dragOffsetY;
+                    draw();
+                    break;
+                }
+            }
+        }
+
+        function handleMove(e) {
+            if (!draggingShape) return;
+            if (e.cancelable) e.preventDefault();
+            const pos = getEventPos(e);
+            draggingShape.x = pos.x + dragOffsetX;
+            draggingShape.y = pos.y + dragOffsetY;
+            draw();
+        }
+
+        function getPivotPosition(shape) {
+            let minX = 99, minY = 99, maxX = -99, maxY = -99;
+            shape.data.blocks.forEach(b => {
+                minX = Math.min(minX, b[0]); maxX = Math.max(maxX, b[0]);
+                minY = Math.min(minY, b[1]); maxY = Math.max(maxY, b[1]);
+            });
+            const ox = shape.x - ((minX + maxX + 1) * CELL_SIZE) / 2;
+            const oy = shape.y - ((minY + maxY + 1) * CELL_SIZE) / 2;
+            let col = Math.round((ox - GRID_OFFSET_X) / CELL_SIZE);
+            let row = Math.round((oy - GRID_OFFSET_Y) / CELL_SIZE);
+            return { col, row };
+        }
+
+        function handleEnd(e) {
+            if (!draggingShape) return;
+            if (e.cancelable) e.preventDefault();
+            
+            let p = getPivotPosition(draggingShape);
+
+            if (canPlace(draggingShape.data, p.col, p.row)) {
+                placeShape(draggingShape.data, p.col, p.row);
+                playSound('drop'); 
+                draggingShape.placed = true;
+                draggingShape = null;
+                updateScore(10); 
+                
+                let result = checkClears();
+                if(result === 'bonus') setTimeout(() => playSound('bonus'), 100);
+                else if (result === 'clear') setTimeout(() => playSound('clear'), 150);
+
+                if (trayShapes.every(ts => ts.placed)) spawnTray();
+                
+                setTimeout(() => {
+                    if (checkGameOver()) {
+                        playSound('gameover'); 
+                        myScore -= 1000;
+                        if (myScore < 0) myScore = 0;
+                        updateScore(0);
+                        showFloatingText("盤面炸裂! -1000", "#ff007f");
+                        // 對戰不死！清空重來！
+                        initBoard();
+                        spawnTray();
+                    }
+                    draw(); 
+                }, 50);
+            } else {
+                draggingShape.x = draggingShape.homeX;
+                draggingShape.y = draggingShape.homeY;
+                draggingShape.scale = 0.55;
+                draggingShape = null;
+                draw();
+            }
+        }
+
+        function canPlace(sData, pCol, pRow) {
+            for (let b of sData.blocks) {
+                const c = pCol + b[0];
+                const r = pRow + b[1];
+                if (r < 0 || r >= GRID_SIZE || c < 0 || c >= GRID_SIZE) return false;
+                if (board[r][c] !== null) return false;
+            }
+            return true;
+        }
+
+        function placeShape(sData, pCol, pRow) {
+            for (let b of sData.blocks) {
+                board[pRow + b[1]][pCol + b[0]] = sData.color;
+            }
+        }
+
+        function checkClears() {
+            let rowsToClear = [];
+            let colsToClear = [];
+
+            for (let r = 0; r < GRID_SIZE; r++) {
+                if (board[r].every(cell => cell !== null)) rowsToClear.push(r);
+            }
+            for (let c = 0; c < GRID_SIZE; c++) {
+                let colFull = true;
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    if (board[r][c] === null) { colFull = false; break; }
+                }
+                if (colFull) colsToClear.push(c);
+            }
+
+            let clearedCells = new Set();
+            rowsToClear.forEach(r => { for (let c = 0; c < GRID_SIZE; c++) clearedCells.add(`${r},${c}`); });
+            colsToClear.forEach(c => { for (let r = 0; r < GRID_SIZE; r++) clearedCells.add(`${r},${c}`); });
+
+            if (clearedCells.size > 0) {
+                let bonusPoints = 0;
+                let gotLemon = false;
+
+                clearedCells.forEach(key => {
+                    let [r, c] = key.split(',').map(Number);
+                    board[r][c] = null;
+                    if (itemsBoard[r][c] === 'lemon') {
+                        bonusPoints += 500;
+                        itemsBoard[r][c] = null;
+                        gotLemon = true;
+                    }
+                });
+
+                const linesCleared = rowsToClear.length + colsToClear.length;
+                updateScore(linesCleared * 100 + bonusPoints); 
+                
+                // 送出攻擊！
+                if (linesCleared >= 2 && conn && conn.open) {
+                    conn.send({type: 'penalty', lines: linesCleared - 1});
+                    showFloatingText(`💥 攻擊 +${linesCleared - 1}!`, '#00d2ff');
+                } else if (gotLemon) {
+                    showFloatingText("🍋 +500", "#ffcc00");
+                }
+                
+                return gotLemon ? 'bonus' : 'clear';
+            }
+            return null;
+        }
+
+        function checkGameOver() {
+            const unplaced = trayShapes.filter(ts => !ts.placed);
+            if (unplaced.length === 0) return false;
+
+            for (let ts of unplaced) {
+                let canFitAnywhere = false;
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        if (canPlace(ts.data, c, r)) {
+                            canFitAnywhere = true;
+                            break;
+                        }
+                    }
+                    if (canFitAnywhere) break;
+                }
+                if (canFitAnywhere) return false; 
+            }
+            return true; 
+        }
+
+        canvas.addEventListener('mousedown', handleStart);
+        canvas.addEventListener('mousemove', handleMove);
+        window.addEventListener('mouseup', handleEnd);
+
+        canvas.addEventListener('touchstart', handleStart, {passive: false});
+        canvas.addEventListener('touchmove', handleMove, {passive: false});
+        canvas.addEventListener('touchend', handleEnd, {passive: false});
+
+    </script>
+</body>
+</html>
