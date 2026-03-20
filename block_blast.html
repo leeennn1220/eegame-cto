@@ -214,9 +214,9 @@
                 // Hitbox logic
                 if (Math.abs(pos.x - ts.x) < 50 && Math.abs(pos.y - ts.y) < 50) {
                     draggingShape = ts;
-                    ts.scale = 0.95; // Enlarge slightly
-                    dragOffsetX = ts.x - pos.x;
-                    dragOffsetY = ts.y - pos.y - 50; // Offset above finger
+                    ts.scale = 1.0; // 放大到與網格完全同等比例 1:1
+                    dragOffsetX = 0; // 強制對齊手指 X 軸中心
+                    dragOffsetY = -80; // 把方塊大幅往上提，避免被手指遮擋視線
                     ts.x = pos.x + dragOffsetX;
                     ts.y = pos.y + dragOffsetY;
                     draw();
@@ -240,8 +240,10 @@
                 minX = Math.min(minX, b[0]); maxX = Math.max(maxX, b[0]);
                 minY = Math.min(minY, b[1]); maxY = Math.max(maxY, b[1]);
             });
-            let col = Math.round((shape.x - (minX + maxX)/2 * CELL_SIZE - GRID_OFFSET_X) / CELL_SIZE);
-            let row = Math.round((shape.y - (minY + maxY)/2 * CELL_SIZE - GRID_OFFSET_Y) / CELL_SIZE);
+            const ox = shape.x - ((minX + maxX + 1) * CELL_SIZE) / 2;
+            const oy = shape.y - ((minY + maxY + 1) * CELL_SIZE) / 2;
+            let col = Math.round((ox - GRID_OFFSET_X) / CELL_SIZE);
+            let row = Math.round((oy - GRID_OFFSET_Y) / CELL_SIZE);
             return { col, row };
         }
 
