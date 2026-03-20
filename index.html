@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neon Snake - eegame</title>
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#00ffcc">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #0d0e15;
+            color: #fff;
+            touch-action: none; /* 防止手機滑動時螢幕跟著滾動 */
+            font-family: 'Inter', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            overflow: hidden;
+        }
+        h1 {
+            color: #00ffcc;
+            text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ffcc;
+            margin-bottom: 10px;
+        }
+        #scoreBoard {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            color: #ff007f;
+            text-shadow: 0 0 5px #ff007f;
+        }
+        #gameContainer {
+            position: relative;
+        }
+        canvas {
+            background-color: #161824;
+            border: 2px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.2);
+        }
+        #gameOver {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(13, 14, 21, 0.85);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 8px;
+            backdrop-filter: blur(4px);
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        #gameOver.visible {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        button {
+            margin-top: 20px;
+            padding: 10px 25px;
+            font-size: 1rem;
+            font-weight: bold;
+            color: #0d0e15;
+            background: #00ffcc;
+            border: none;
+            border-radius: 20px;
+            cursor: pointer;
+            box-shadow: 0 0 10px #00ffcc;
+            transition: all 0.2s;
+        }
+        button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 20px #00ffcc;
+        }
+        .controls {
+            margin-top: 20px;
+            color: #888;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <h1>🌟 螢光貪吃蛇 (Neon Snake)</h1>
+    <div id="scoreBoard">分數: <span id="score">0</span></div>
+    
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        <div id="gameOver">
+            <h2 style="color: #ff007f; text-shadow: 0 0 10px #ff007f;" id="gameOverTitle">遊戲結束</h2>
+            <p id="finalScoreContainer">最終分數: <span id="finalScore">0</span></p>
+            <button onclick="startGame()" id="startBtn">開始遊戲</button>
+        </div>
+    </div>
+    
+    <div class="controls">電腦：鍵盤方向鍵 (WASD)<br>手機：直接在螢幕上「上下左右滑動」</div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreElement = document.getElementById('score');
+        const gameOverScreen = document.getElementById('gameOver');
+        const finalScoreElement = document.getElementById('finalScore');
+
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+        
+        let snake = [];
+        let dx = 0;
+        let dy = 0;
+        let foodX;
+        let foodY;
+        let score = 0;
+        let gameLoop;
+        let isChangingDirection = false;
+
+        function startGame() {
+            snake = [
+                {x: 10, y: 10},
+                {x: 9, y: 10},
+                {x: 8, y: 10}
+            ];
+            dx = 1;
+            dy = 0;
+            score = 0;
+            scoreElement.innerText = score;
+            gameOverScreen.classList.remove('visible');
+            generateFood();
+            if(gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(main, 100);
+        }
+
+        function main() {
+            isChangingDirection = false;
+            
+            // Move snake
+            const head = {x: snake[0].x + dx, y: snake[0].y + dy};
+            snake.unshift(head);
+            
+            // Check food collision
+            if (head.x === foodX && head.y === foodY) {
+                score += 10;
+                scoreElement.innerText = score;
+                generateFood();
+            } else {
+                snake.pop(); // Remove tail
+            }
+            
+            // Check wall or self collision
+            if (hasGameEnded()) {
+                finalScoreElement.innerText = score;
+                gameOverScreen.classList.add('visible');
+                clearInterval(gameLoop);
+                return;
+            }
+
+            drawGame();
+        }
+
+        function drawGame() {
+            // Clear canvas
+            ctx.fillStyle = '#161824';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw food
+            ctx.shadowBlur = 15;
+            ctx.shadowColor = '#ff007f';
+            ctx.fillStyle = '#ff007f';
+            ctx.fillRect(foodX * gridSize, foodY * gridSize, gridSize - 2, gridSize - 2);
+
+            // Draw snake
+            ctx.shadowColor = '#00ffcc';
+            snake.forEach((part, index) => {
+                ctx.fillStyle = index === 0 ? '#ffffff' : '#00ffcc';
+                ctx.shadowBlur = index === 0 ? 20 : 10;
+                ctx.fillRect(part.x * gridSize + 1, part.y * gridSize + 1, gridSize - 2, gridSize - 2);
+            });
+            ctx.shadowBlur = 0; // Reset
+        }
+
+        function generateFood() {
+            foodX = Math.floor(Math.random() * tileCount);
+            foodY = Math.floor(Math.random() * tileCount);
+            // Ensure food doesn't spawn on snake
+            snake.forEach(function has_snake_eaten_food(part) {
+                const has_eaten = part.x === foodX && part.y === foodY;
+                if (has_eaten) generateFood();
+            });
+        }
+
+        function hasGameEnded() {
+            // Self collision
+            for (let i = 4; i < snake.length; i++) {
+                if (snake[i].x === snake[0].x && snake[i].y === snake[0].y) return true;
+            }
+            // Wall collision
+            const hitLeftWall = snake[0].x < 0;
+            const hitRightWall = snake[0].x >= tileCount;
+            const hitTopWall = snake[0].y < 0;
+            const hitBottomWall = snake[0].y >= tileCount;
+            return hitLeftWall || hitRightWall || hitTopWall || hitBottomWall;
+        }
+
+        function changeDirection(key) {
+            const goingUp = dy === -1;
+            const goingDown = dy === 1;
+            const goingRight = dx === 1;
+            const goingLeft = dx === -1;
+
+            if ((key === 'ArrowUp' || key === 'w' || key === 'W') && !goingDown) { dx = 0; dy = -1; isChangingDirection = true; }
+            if ((key === 'ArrowDown' || key === 's' || key === 'S') && !goingUp) { dx = 0; dy = 1; isChangingDirection = true; }
+            if ((key === 'ArrowLeft' || key === 'a' || key === 'A') && !goingRight) { dx = -1; dy = 0; isChangingDirection = true; }
+            if ((key === 'ArrowRight' || key === 'd' || key === 'D') && !goingLeft) { dx = 1; dy = 0; isChangingDirection = true; }
+        }
+
+        document.addEventListener("keydown", (event) => {
+            if (isChangingDirection) return;
+            changeDirection(event.key);
+        });
+
+        // 手機滑動控制 (Mobile Swipe logic)
+        let touchStartX = 0;
+        let touchStartY = 0;
+
+        document.addEventListener('touchstart', function(event) {
+            touchStartX = event.changedTouches[0].screenX;
+            touchStartY = event.changedTouches[0].screenY;
+        }, {passive: true});
+
+        document.addEventListener('touchend', function(event) {
+            if (isChangingDirection) return;
+            let touchEndX = event.changedTouches[0].screenX;
+            let touchEndY = event.changedTouches[0].screenY;
+            handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+        }, {passive: true});
+
+        function handleSwipe(startX, startY, endX, endY) {
+            const deltaX = endX - startX;
+            const deltaY = endY - startY;
+            
+            // 忽略輕微的滑動（防誤觸）
+            if (Math.abs(deltaX) < 30 && Math.abs(deltaY) < 30) return;
+
+            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                // 水平滑動
+                if (deltaX > 0) changeDirection('ArrowRight');
+                else changeDirection('ArrowLeft');
+            } else {
+                // 垂直滑動
+                if (deltaY > 0) changeDirection('ArrowDown');
+                else changeDirection('ArrowUp');
+            }
+        }
+
+        // 初始化畫面（不直接開始遊戲）
+        drawGame(); // 先畫一個空背景
+        gameOverScreen.classList.add('visible');
+        document.getElementById('gameOverTitle').innerText = '準備好了嗎？';
+        document.getElementById('finalScoreContainer').style.display = 'none';
+        document.getElementById('startBtn').innerText = '🎮 點擊開始';
+
+        // 攔截重新開始的邏輯
+        const originalStartGame = startGame;
+        startGame = function() {
+            document.getElementById('gameOverTitle').innerText = '遊戲結束';
+            document.getElementById('finalScoreContainer').style.display = 'block';
+            document.getElementById('startBtn').innerText = '🔄 重新開始';
+            originalStartGame();
+        };
+
+        // 註冊 Service Worker，啟動 PWA 應用程式安裝能力
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('./sw.js').then(function() {
+                console.log('Service Worker Registred');
+            });
+        }
+    </script>
+</body>
+</html>
