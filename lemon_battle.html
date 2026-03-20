@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>檸檬磚塊 - 對戰版</title>
-    <!-- 引入 PeerJS 用來做免後端即時連線 -->
+    <title>檸檬磚塊 - 終極對戰版</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body {
@@ -20,25 +19,24 @@
             height: 100vh;
         }
         
-        /* UI Layer (選單與連線畫面) */
-        #uiLayer { position: absolute; top:0; left:0; width:100%; height:100%; z-index: 200; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 10vh; }
+        #uiLayer { position: absolute; top:0; left:0; width:100%; height:100%; z-index: 200; background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; padding-top: 5vh; }
         .hidden { display: none !important; }
         .menu-box { background: #16213e; padding: 20px; border-radius: 12px; text-align: center; margin: 10px; width: 85%; max-width: 320px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);}
-        input { padding: 12px; border-radius: 8px; border: 2px solid #00d2ff; background: #0f172a; color: #fff; text-align: center; width: 80%; font-size: 18px; margin-bottom: 15px; font-weight: bold;}
-        button { padding: 12px 30px; font-size: 18px; font-weight: bold; color: #1a1a2e; background: #00d2ff; border: none; border-radius: 25px; cursor: pointer; box-shadow: 0 0 15px #00d2ff; margin: 8px 5px; width: 80%;}
+        input { padding: 12px; border-radius: 8px; border: 2px solid #00d2ff; background: #0f172a; color: #fff; text-align: center; width: 80%; font-size: 18px; margin-bottom: 10px; font-weight: bold;}
+        button { padding: 12px 30px; font-size: 18px; font-weight: bold; color: #1a1a2e; background: #00d2ff; border: none; border-radius: 25px; cursor: pointer; box-shadow: 0 0 15px #00d2ff; margin: 8px 5px; width: 90%; transition: transform 0.1s;}
         button:active { transform: scale(0.95); }
         button.red { background: #ff3366; box-shadow: 0 0 15px #ff3366; color: white;}
+        button.green { background: #66ff66; box-shadow: 0 0 15px #66ff66; color: #1a1a2e;}
         
-        #leaderboardList { text-align: left; margin-top: 20px; font-size: 16px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; max-height: 200px; overflow-y: auto;}
+        #leaderboardList { text-align: left; margin-top: 15px; font-size: 16px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; max-height: 150px; overflow-y: auto;}
         
-        /* 遊戲主畫面 */
-        .hud { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px 25px; box-sizing: border-box; background: rgba(0,0,0,0.5); position: absolute; top: 0; z-index: 10; font-size: 18px; font-weight: bold;}
+        .hud { display: flex; justify-content: space-between; align-items: center; width: 100%; padding: 15px 20px; box-sizing: border-box; background: rgba(0,0,0,0.5); position: absolute; top: 0; z-index: 10; font-size: 18px; font-weight: bold;}
         #gameArea { position: relative; display: flex; justify-content: center; width: 100%; margin-top: 60px;}
         canvas { display: block; background-color: #16213e; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         
         #floatingText {
             position: absolute; 
-            font-size: 32px; 
+            font-size: 36px; 
             font-weight: bold; 
             opacity: 0; 
             pointer-events: none; 
@@ -53,15 +51,23 @@
 </head>
 <body>
 
-    <!-- 選單層 -->
     <div id="uiLayer">
-        <h1 style="color:#ffcc00; text-shadow:0 0 20px #ffcc00; font-size: 32px; margin-bottom: 30px;">🍋 檸檬磚塊</h1>
+        <h1 style="color:#ffcc00; text-shadow:0 0 20px #ffcc00; font-size: 32px; margin-bottom: 10px;">🍋 檸檬磚塊</h1>
         
-        <!-- 主選單 -->
         <div id="mainMenu" class="menu-box">
             <input type="text" id="playerName" placeholder="輸入你的大名" maxlength="10">
-            <button onclick="createRoom()">🏆 建立對戰</button>
-            <button onclick="showJoinMenu()">⚔️ 加入對戰</button>
+            
+            <button class="green" onclick="startSinglePlayer()">🟩 單機玩爽爽</button>
+            <hr style="border-color:#333; margin: 15px 0;">
+            
+            <p style="color:#00d2ff; font-weight:bold; margin: 5px 0;">多人對戰設定 (連線)</p>
+            <select id="timeLimitSelect" style="width:90%; padding:10px; margin-bottom:10px; background:#0f172a; color:#fff; border:1px solid #00d2ff; border-radius:8px; font-size:16px;">
+                <option value="60">⏱️ 限時 60 秒</option>
+                <option value="90">⏱️ 限時 90 秒</option>
+                <option value="0">💀 死鬥模式 (無限期對戰)</option>
+            </select>
+            <button onclick="createRoom()">🏆 建立對戰 (房主)</button>
+            <button onclick="showJoinMenu()">⚔️ 加入別人的對戰</button>
             
             <div id="leaderboardList">
                 <h3 style="margin-top:0; color:#00d2ff; text-align:center;">🏅 本地排行榜</h3>
@@ -69,15 +75,13 @@
             </div>
         </div>
 
-        <!-- 成為房主 -->
         <div id="hostMenu" class="menu-box hidden">
             <h3 style="color:#ddd;">請朋友輸入此代碼：</h3>
             <h1 id="roomCodeText" style="color:#00d2ff; letter-spacing:5px; font-size: 40px; margin: 10px 0;">連線中...</h1>
-            <p style="color:#aaa; font-size: 14px;">等待對手加入...(請保持畫面開啟)</p>
+            <p style="color:#aaa; font-size: 14px;">等待對方加入...(雙方畫面請保持開啟)</p>
             <button class="red" onclick="cancelRoom()">取消 / 返回</button>
         </div>
 
-        <!-- 加入對戰 -->
         <div id="joinMenu" class="menu-box hidden">
             <h3 style="color:#ddd;">輸入對手代碼：</h3>
             <input type="text" id="joinCodeInput" placeholder="5碼英數代碼" maxlength="5" style="text-transform:uppercase; letter-spacing: 3px;">
@@ -86,20 +90,18 @@
             <p id="joinStatus" style="color:#ff3366; font-size:14px;"></p>
         </div>
 
-        <!-- 結算畫面 -->
         <div id="gameOverScreen" class="menu-box hidden">
-            <h1 id="matchResult" style="color:#fff; font-size: 40px;">時間到！</h1>
+            <h1 id="matchResult" style="color:#fff; font-size: 36px;">結算中...</h1>
             <div id="matchStats" style="font-size: 20px; line-height: 1.8; margin-bottom: 20px; color: #ddd;"></div>
-            <button onclick="location.reload()">回主選單</button>
+            <button onclick="location.reload()">重新開始</button>
         </div>
     </div>
 
-    <!-- 遊戲主畫面 -->
     <div id="gameUI" class="hidden" style="width:100%; height:100%; position: relative;">
         <div class="hud">
             <div style="color:#00d2ff;">我: <span id="myScore">0</span></div>
-            <div style="color:#ffcc00; font-size: 24px;">⏱ <span id="timerText">60</span></div>
-            <div style="color:#ff3366;">對手: <span id="enemyScore">0</span></div>
+            <div style="color:#ffcc00; font-size: 22px; text-align:center; flex:1;" id="timerText">60</div>
+            <div id="enemyScoreDiv" style="color:#ff3366; text-align:right;">對手: <span id="enemyScore">0</span></div>
         </div>
         <div id="gameArea">
             <canvas id="gameCanvas"></canvas>
@@ -108,17 +110,20 @@
     </div>
 
     <script>
-        // ==== Global UI Logic ====
+        // ==== Global UI & Settings ====
         const playerNameInput = document.getElementById('playerName');
         let myName = localStorage.getItem('lemon_name') || '';
         playerNameInput.value = myName;
+
+        let currentMode = 'multi'; // 'single' | 'multi'
+        let matchTimeLimit = 60; // 0 == Deathmatch
 
         function renderLeaderboard() {
             let lb = JSON.parse(localStorage.getItem('lemon_lb') || '[]');
             const ul = document.getElementById('lbList');
             ul.innerHTML = '';
             if (lb.length === 0) {
-                ul.innerHTML = '<li style="color:#777; list-style:none; text-align:center;">尚無對戰紀錄</li>';
+                ul.innerHTML = '<li style="color:#777; list-style:none; text-align:center;">尚無紀錄</li>';
                 return;
             }
             lb.sort((a,b) => b.score - a.score);
@@ -142,7 +147,19 @@
             switchMenu('mainMenu');
         }
 
-        // ==== PeerJS WebRTC 連線系統 ====
+        // ==== Single Player Setup ====
+        function startSinglePlayer() {
+            myName = playerNameInput.value.trim() || '無名氏';
+            localStorage.setItem('lemon_name', myName);
+            currentMode = 'single';
+            matchTimeLimit = 0; 
+            
+            document.getElementById('enemyScoreDiv').style.display = 'none';
+            document.getElementById('timerText').innerText = '生存: 0s';
+            startGameTimer();
+        }
+
+        // ==== PeerJS WebRTC Setup ====
         let peer;
         let conn;
         let myScore = 0;
@@ -154,28 +171,21 @@
         function initPeer() {
             myName = playerNameInput.value.trim() || '無名氏';
             localStorage.setItem('lemon_name', myName);
-            initAudio(); // 互動時先解鎖
+            initAudio(); 
+            document.getElementById('enemyScoreDiv').style.display = 'block';
         }
 
         function createRoom() {
             initPeer();
             switchMenu('hostMenu');
             let code = Math.random().toString(36).substr(2, 5).toUpperCase();
-            document.getElementById('roomCodeText').innerText = '連線中...';
+            document.getElementById('roomCodeText').innerText = '準備中...';
             
             peer = new Peer('lemon-' + code);
-            peer.on('open', id => {
-                document.getElementById('roomCodeText').innerText = code;
-            });
-            
+            peer.on('open', id => document.getElementById('roomCodeText').innerText = code);
             peer.on('connection', connection => {
                 conn = connection;
                 setupConn(conn, true);
-            });
-            
-            peer.on('error', err => {
-                alert('連線伺服器忙碌，請重試！');
-                cancelRoom();
             });
         }
 
@@ -196,32 +206,38 @@
                 conn.on('open', () => setupConn(conn, false));
                 conn.on('error', () => { document.getElementById('joinStatus').innerText = '連線失敗或找不到房間！'; });
             });
-            peer.on('error', err => {
-                document.getElementById('joinStatus').innerText = '房間不存在或伺服器錯誤！';
-            });
         }
 
         function setupConn(connection, isHost) {
             conn.on('data', data => {
-                if (data.type === 'start') startGameTimer();
+                if (data.type === 'start') {
+                    currentMode = 'multi';
+                    matchTimeLimit = parseInt(data.timeLimit);
+                    startGameTimer();
+                }
                 else if (data.type === 'score') updateOpponentScore(data.value);
                 else if (data.type === 'penalty') receivePenalty(data.lines);
                 else if (data.type === 'report') finalizeMatch(data.finalScore, data.name);
+                else if (data.type === 'deathmatch_loss') endMatch(true); // 對手死掉了
             });
             
             if (isHost) {
-                // 房主稍微延遲確保雙方通道穩定，然後發起開戰
-                document.getElementById('roomCodeText').innerText = '對手已連接！';
+                document.getElementById('roomCodeText').innerText = '連線成功！開戰！';
                 setTimeout(() => {
-                    conn.send({type: 'start'});
+                    let tl = document.getElementById('timeLimitSelect').value;
+                    currentMode = 'multi';
+                    matchTimeLimit = parseInt(tl);
+                    conn.send({type: 'start', timeLimit: tl});
                     startGameTimer();
-                }, 1000);
+                }, 800);
             }
         }
 
-        // ==== 遊戲控制系統 ====
+        // ==== Game Logic & Loop ====
         let timerInt;
-        let gameTime = 60; // 60秒激戰
+        let gameTime = 0; 
+        let isRunning = false;
+        let comboCount = 0;
 
         function startGameTimer() {
             document.getElementById('uiLayer').classList.add('hidden');
@@ -231,46 +247,86 @@
             initBoard();
             myScore = 0;
             enemyScore = 0;
+            comboCount = 0;
             isMatchOver = false;
+            particles = [];
+            shakeAmount = 0;
+            
             updateScore(0);
             spawnTray();
-            draw();
             
-            // 開始倒數
+            isRunning = true;
+            requestAnimationFrame(gameLoop);
+            
+            gameTime = (currentMode === 'single' || matchTimeLimit === 0) ? 0 : matchTimeLimit;
+            updateTimerUI();
+
             timerInt = setInterval(() => {
                 if (isMatchOver) return;
-                gameTime--;
-                document.getElementById('timerText').innerText = gameTime;
                 
-                if (gameTime <= 10) document.getElementById('timerText').style.color = '#ff3366'; // 紅色警示
-                
-                if (gameTime <= 0) {
-                    clearInterval(timerInt);
-                    endMatch();
+                if (currentMode === 'single' || matchTimeLimit === 0) {
+                    gameTime++;
+                    updateTimerUI();
+                } else {
+                    gameTime--;
+                    updateTimerUI();
+                    
+                    if (gameTime <= 0) {
+                        clearInterval(timerInt);
+                        endMatch();
+                    }
                 }
             }, 1000);
         }
 
-        function endMatch() {
+        function updateTimerUI() {
+            const tt = document.getElementById('timerText');
+            if (currentMode === 'single') tt.innerText = `生存: ${gameTime}s`;
+            else if (matchTimeLimit === 0) tt.innerText = `死鬥: ${gameTime}s`;
+            else {
+                tt.innerText = gameTime;
+                tt.style.color = (gameTime <= 10) ? '#ff3366' : '#ffcc00';
+            }
+        }
+
+        function endMatch(didIWin = null) {
             isMatchOver = true;
+            isRunning = false;
             document.getElementById('gameUI').classList.add('hidden');
             document.getElementById('uiLayer').classList.remove('hidden');
             switchMenu('gameOverScreen');
-            document.getElementById('matchResult').innerText = '結算中...';
-            document.getElementById('matchStats').innerHTML = `你 (${myName}):<br><span style="color:#00d2ff; font-size:30px; font-weight:bold;">${myScore}</span>`;
             
-            // 存入本地榜單
+            // Save to local leaderboard
             let lb = JSON.parse(localStorage.getItem('lemon_lb') || '[]');
             lb.push({name: myName, score: myScore});
             localStorage.setItem('lemon_lb', JSON.stringify(lb));
             
             playSound('gameover');
             
-            // 發送分數給對手
-            if (conn && conn.open) {
-                conn.send({type: 'report', finalScore: myScore, name: myName});
+            if (currentMode === 'single') {
+                document.getElementById('matchResult').innerText = "遊戲結束";
+                document.getElementById('matchStats').innerHTML = `生存時間: ${gameTime}s<br>總結分數: <span style="color:#00d2ff; font-weight:bold; font-size:30px;">${myScore}</span>`;
+            } else {
+                if (matchTimeLimit === 0) {
+                    if (didIWin === false) {
+                        document.getElementById('matchResult').innerText = "💀 被擊潰了...";
+                        document.getElementById('matchResult').style.color = "#ff3366";
+                        if (conn && conn.open) conn.send({type: 'deathmatch_loss'});
+                        document.getElementById('matchStats').innerHTML = `存活時間: ${gameTime}s<br>你的分數: ${myScore}`;
+                    } else if (didIWin === true) {
+                        document.getElementById('matchResult').innerText = "🏆 對手陣亡，你贏了！";
+                        document.getElementById('matchResult').style.color = "#66ff66";
+                        document.getElementById('matchStats').innerHTML = `存活時間: ${gameTime}s<br>你的分數: ${myScore}`;
+                    }
+                    if (conn) conn.close();
+                    if (peer) peer.destroy();
+                } else {
+                    document.getElementById('matchResult').innerText = '結算中...';
+                    document.getElementById('matchStats').innerHTML = `你 (${myName}):<br><span style="color:#00d2ff; font-size:30px; font-weight:bold;">${myScore}</span>`;
+                    if (conn && conn.open) conn.send({type: 'report', finalScore: myScore, name: myName});
+                    checkWinner();
+                }
             }
-            checkWinner();
         }
 
         function finalizeMatch(es, en) {
@@ -280,9 +336,9 @@
         }
 
         function checkWinner() {
-            if (!isMatchOver || enemyFinalScore === -1) return; // 雙方都還沒傳完資料
+            if (!isMatchOver || enemyFinalScore === -1) return; 
             
-            let result = "平手！";
+            let result = "⚖️ 平手！";
             let color = "#fff";
             if (myScore > enemyFinalScore) { result = "🏆 你贏了！"; color = "#66ff66"; }
             else if (myScore < enemyFinalScore) { result = "💀 你輸了..."; color = "#ff3366"; }
@@ -293,13 +349,57 @@
                 你 (${myName})：<span style="color:#00d2ff; font-weight:bold;">${myScore}</span><br>
                 敵 (${enemyFinalName})：<span style="color:#ff3366; font-weight:bold;">${enemyFinalScore}</span>
             `;
-            
-            // 中斷連線
             if (conn) conn.close();
             if (peer) peer.destroy();
         }
 
-        // ==== 音效系統 (Web Audio API) ==== 
+        // ==== Visuals (Animations, Shake, Particles) ====
+        let shakeAmount = 0;
+        let particles = [];
+        function triggerShake(amt) { shakeAmount = amt; }
+
+        function addParticles(x, y, color) {
+            for (let i = 0; i < 20; i++) {
+                particles.push({
+                    x: x, y: y,
+                    vx: (Math.random() - 0.5) * 16, vy: (Math.random() - 0.5) * 16,
+                    life: 1.0, color: color
+                });
+            }
+        }
+
+        function updateAndDrawParticles(ctx) {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx; p.y += p.vy;
+                p.life -= 0.04;
+                if (p.life <= 0) { particles.splice(i, 1); continue; }
+                ctx.fillStyle = p.color;
+                ctx.globalAlpha = p.life > 0 ? p.life : 0;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, Math.random() * 4 + 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1.0;
+        }
+
+        function showFloatingText(text, color="#ffcc00") {
+            const el = document.getElementById('floatingText');
+            el.innerText = text;
+            el.style.color = color;
+            el.style.textShadow = `0 0 20px ${color}, 0 0 8px #fff`;
+            el.style.transition = 'none';
+            el.style.opacity = '1';
+            el.style.top = '50%';
+            
+            void el.offsetWidth;
+
+            el.style.transition = 'all 1.5s cubic-bezier(0.1, 0.8, 0.1, 1)';
+            el.style.opacity = '0';
+            el.style.top = '10%';
+        }
+
+        // ==== Audio System ==== 
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
 
@@ -319,7 +419,6 @@
         window.addEventListener('mousedown', initAudio, { once: true });
 
         function playSound(type) {
-            initAudio();
             if (!audioCtx || audioCtx.state === 'suspended') return;
             const osc = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
@@ -328,37 +427,37 @@
             const now = audioCtx.currentTime;
             
             if (type === 'drop') {
-                osc.type = 'sine'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
-                gainNode.gain.setValueAtTime(0.15, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.type = 'sine'; osc.frequency.setValueAtTime(600, now); osc.frequency.exponentialRampToValueAtTime(150, now + 0.1);
+                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
                 osc.start(now); osc.stop(now + 0.1);
             } else if (type === 'clear') {
                 osc.type = 'square'; osc.frequency.setValueAtTime(400, now); osc.frequency.setValueAtTime(800, now + 0.1); osc.frequency.setValueAtTime(1200, now + 0.2);
                 gainNode.gain.setValueAtTime(0.15, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
                 osc.start(now); osc.stop(now + 0.3);
             } else if (type === 'bonus') {
-                osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.setValueAtTime(1400, now + 0.1); osc.frequency.setValueAtTime(2000, now + 0.2);
-                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                osc.type = 'sine'; osc.frequency.setValueAtTime(800, now); osc.frequency.setValueAtTime(1400, now + 0.1); osc.frequency.setValueAtTime(2200, now + 0.2);
+                gainNode.gain.setValueAtTime(0.25, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.4);
                 osc.start(now); osc.stop(now + 0.4);
             } else if (type === 'gameover') {
-                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(50, now + 0.6);
-                gainNode.gain.setValueAtTime(0.2, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.6);
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(40, now + 0.6);
+                gainNode.gain.setValueAtTime(0.25, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.6);
                 osc.start(now); osc.stop(now + 0.6);
             } else if (type === 'pickup') {
-                osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.linearRampToValueAtTime(400, now + 0.05);
-                gainNode.gain.setValueAtTime(0.05, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.05);
+                osc.type = 'sine'; osc.frequency.setValueAtTime(400, now); osc.frequency.linearRampToValueAtTime(500, now + 0.05);
+                gainNode.gain.setValueAtTime(0.1, now); gainNode.gain.linearRampToValueAtTime(0.01, now + 0.05);
                 osc.start(now); osc.stop(now + 0.05);
             } else if (type === 'damage') {
-                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(100, now); osc.frequency.exponentialRampToValueAtTime(40, now + 0.3);
-                gainNode.gain.setValueAtTime(0.3, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.3);
-                osc.start(now); osc.stop(now + 0.3);
+                osc.type = 'sawtooth'; osc.frequency.setValueAtTime(150, now); osc.frequency.exponentialRampToValueAtTime(30, now + 0.4);
+                gainNode.gain.setValueAtTime(0.35, now); gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now); osc.stop(now + 0.4);
             }
         }
 
-        // ==== 滿版響應式版面計算 ====
+        // ==== Board Engine ====
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
-        const screenMargin = 20;
-        let maxCanvasWidth = Math.min(window.innerWidth - screenMargin, 400); 
+        const screenMargin = 15; 
+        let maxCanvasWidth = Math.min(window.innerWidth - screenMargin, 480); 
         canvas.width = maxCanvasWidth;
 
         const GRID_SIZE = 8;
@@ -368,7 +467,7 @@
         const GRID_OFFSET_Y = 15;
         const TRAY_Y = GRID_OFFSET_Y + (GRID_SIZE * CELL_SIZE) + 40;
         
-        canvas.height = TRAY_Y + (CELL_SIZE * 3.5);
+        canvas.height = TRAY_Y + (CELL_SIZE * 3.8);
 
         let board = [];
         let itemsBoard = []; 
@@ -429,10 +528,10 @@
                 trayShapes.push({
                     data: sData,
                     homeX: (spacing * i) + spacing / 2,
-                    homeY: TRAY_Y + (CELL_SIZE * 1.5),
+                    homeY: TRAY_Y + (CELL_SIZE * 1.6),
                     x: (spacing * i) + spacing / 2,
-                    y: TRAY_Y + (CELL_SIZE * 1.5),
-                    scale: 0.55,
+                    y: TRAY_Y + (CELL_SIZE * 1.6),
+                    scale: 0.65, // 特效優化：放大下方備用的磚塊
                     placed: false
                 });
             }
@@ -442,7 +541,7 @@
         function updateScore(add) {
             myScore += add;
             document.getElementById('myScore').innerText = myScore;
-            if (conn && conn.open && add > 0) {
+            if (currentMode === 'multi' && conn && conn.open && add > 0) {
                 conn.send({type: 'score', value: myScore});
             }
         }
@@ -454,8 +553,9 @@
 
         function receivePenalty(lines) {
             if (isMatchOver) return;
-            showFloatingText(`⚠️ 受到攻擊 +${lines}!`, "#ff3366");
+            showFloatingText(`⚠️ 遭受黑磚攻擊 +${lines}!`, "#ff3366");
             playSound('damage');
+            triggerShake(20);
             
             for (let i = 0; i < lines; i++) {
                 // Shift up
@@ -463,32 +563,13 @@
                     board[r] = [...board[r+1]];
                     itemsBoard[r] = [...itemsBoard[r+1]];
                 }
-                // Generate penalty row (Gray block) with 1 empty space
+                // Generate penalty row
                 let newRow = new Array(GRID_SIZE).fill('#555555'); 
                 let hole = Math.floor(Math.random() * GRID_SIZE);
                 newRow[hole] = null;
                 board[GRID_SIZE - 1] = newRow;
                 itemsBoard[GRID_SIZE - 1] = new Array(GRID_SIZE).fill(null);
             }
-            draw();
-            
-            // Check if penalty just caused game over (top line overflowed and we couldn't place, this handles naturally via checkGameOver logic if shapes can't be placed)
-        }
-
-        function showFloatingText(text, color="#ffcc00") {
-            const el = document.getElementById('floatingText');
-            el.innerText = text;
-            el.style.color = color;
-            el.style.textShadow = `0 0 15px ${color}, 0 0 5px #000`;
-            el.style.transition = 'none';
-            el.style.opacity = '1';
-            el.style.top = '50%';
-            
-            void el.offsetWidth;
-
-            el.style.transition = 'all 1.5s cubic-bezier(0.1, 0.8, 0.1, 1)';
-            el.style.opacity = '0';
-            el.style.top = '10%';
         }
 
         function drawRoundRect(x, y, w, h, radius, color) {
@@ -496,15 +577,31 @@
             ctx.beginPath();
             ctx.roundRect(x, y, w, h, radius);
             ctx.fill();
-            ctx.fillStyle = 'rgba(255,255,255,0.2)';
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
             ctx.beginPath();
             ctx.roundRect(x+2, y+2, w-4, h/3, radius-2);
             ctx.fill();
         }
 
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        function gameLoop() {
+            if (!isRunning) return;
+            drawScene();
+            requestAnimationFrame(gameLoop);
+        }
 
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            
+            if (shakeAmount > 0) {
+                let dx = (Math.random() - 0.5) * shakeAmount;
+                let dy = (Math.random() - 0.5) * shakeAmount;
+                ctx.translate(dx, dy);
+                shakeAmount *= 0.8;
+                if (shakeAmount < 0.5) shakeAmount = 0;
+            }
+
+            // Grid & Board
             for (let r = 0; r < GRID_SIZE; r++) {
                 for (let c = 0; c < GRID_SIZE; c++) {
                     const bx = GRID_OFFSET_X + c * CELL_SIZE;
@@ -544,11 +641,17 @@
                     draggingShape.data.blocks.forEach(b => {
                         const bx = GRID_OFFSET_X + (p.col + b[0]) * CELL_SIZE;
                         const by = GRID_OFFSET_Y + (p.row + b[1]) * CELL_SIZE;
-                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, 'rgba(255,255,255,0.3)');
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, 'rgba(255,255,255,0.5)');
+                        ctx.strokeStyle = '#fff';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(bx, by, CELL_SIZE-2, CELL_SIZE-2);
                     });
                 }
                 drawShape(draggingShape.data, draggingShape.x, draggingShape.y, draggingShape.scale);
             }
+            
+            updateAndDrawParticles(ctx);
+            ctx.restore();
         }
 
         function drawShape(sData, cx, cy, scale) {
@@ -587,15 +690,14 @@
             for (let i = trayShapes.length - 1; i >= 0; i--) {
                 const ts = trayShapes[i];
                 if (ts.placed) continue;
-                if (Math.abs(pos.x - ts.x) < 50 && Math.abs(pos.y - ts.y) < 50) {
+                if (Math.abs(pos.x - ts.x) < 60 && Math.abs(pos.y - ts.y) < 60) {
                     playSound('pickup'); 
                     draggingShape = ts;
                     ts.scale = 1.0; 
                     dragOffsetX = 0; 
-                    dragOffsetY = -(CELL_SIZE * 3); 
+                    dragOffsetY = -(CELL_SIZE * 3.5); 
                     ts.x = pos.x + dragOffsetX;
                     ts.y = pos.y + dragOffsetY;
-                    draw();
                     break;
                 }
             }
@@ -607,7 +709,6 @@
             const pos = getEventPos(e);
             draggingShape.x = pos.x + dragOffsetX;
             draggingShape.y = pos.y + dragOffsetY;
-            draw();
         }
 
         function getPivotPosition(shape) {
@@ -632,6 +733,7 @@
             if (canPlace(draggingShape.data, p.col, p.row)) {
                 placeShape(draggingShape.data, p.col, p.row);
                 playSound('drop'); 
+                triggerShake(3); // 小震動
                 draggingShape.placed = true;
                 draggingShape = null;
                 updateScore(10); 
@@ -645,22 +747,28 @@
                 setTimeout(() => {
                     if (checkGameOver()) {
                         playSound('gameover'); 
-                        myScore -= 1000;
-                        if (myScore < 0) myScore = 0;
-                        updateScore(0);
-                        showFloatingText("盤面炸裂! -1000", "#ff007f");
-                        // 對戰不死！清空重來！
-                        initBoard();
-                        spawnTray();
+                        triggerShake(30);
+
+                        if (currentMode === 'single') {
+                            endMatch(); 
+                        } else if (matchTimeLimit === 0) {
+                            endMatch(false); // 死鬥直接判定輸
+                        } else {
+                            // 計時對戰：炸裂扣分、繼續玩！
+                            myScore -= 1000;
+                            if (myScore < 0) myScore = 0;
+                            updateScore(0);
+                            showFloatingText("盤面炸裂! -1000", "#ff007f");
+                            initBoard();
+                            spawnTray();
+                        }
                     }
-                    draw(); 
                 }, 50);
             } else {
                 draggingShape.x = draggingShape.homeX;
                 draggingShape.y = draggingShape.homeY;
-                draggingShape.scale = 0.55;
+                draggingShape.scale = 0.65;
                 draggingShape = null;
-                draw();
             }
         }
 
@@ -685,7 +793,9 @@
             let colsToClear = [];
 
             for (let r = 0; r < GRID_SIZE; r++) {
-                if (board[r].every(cell => cell !== null)) rowsToClear.push(r);
+                if (board[r].every(cell => cell !== null && cell !== '#555555')) rowsToClear.push(r);
+                // 灰色垃圾磚塊 (#555555) 如果被玩家湊滿一排也可以消除！
+                else if (board[r].every(cell => cell !== null)) rowsToClear.push(r); 
             }
             for (let c = 0; c < GRID_SIZE; c++) {
                 let colFull = true;
@@ -703,8 +813,14 @@
                 let bonusPoints = 0;
                 let gotLemon = false;
 
+                // 爆破粒子特效收集
                 clearedCells.forEach(key => {
                     let [r, c] = key.split(',').map(Number);
+                    let color = board[r][c] || '#fff';
+                    let bx = GRID_OFFSET_X + c * CELL_SIZE + CELL_SIZE/2;
+                    let by = GRID_OFFSET_Y + r * CELL_SIZE + CELL_SIZE/2;
+                    addParticles(bx, by, color);
+
                     board[r][c] = null;
                     if (itemsBoard[r][c] === 'lemon') {
                         bonusPoints += 500;
@@ -713,20 +829,40 @@
                     }
                 });
 
+                // Perfect Clear Check (全畫面消除)
+                let isPerfectClear = board.every(row => row.every(cell => cell === null));
+                if (isPerfectClear) {
+                    bonusPoints += 2000;
+                }
+
                 const linesCleared = rowsToClear.length + colsToClear.length;
-                updateScore(linesCleared * 100 + bonusPoints); 
+                comboCount++;
+                let comboBonus = (comboCount > 1) ? comboCount * 100 : 0;
                 
-                // 送出攻擊！
-                if (linesCleared >= 2 && conn && conn.open) {
+                triggerShake(10 + linesCleared * 5); // 消除越多抖越大力
+                if (isPerfectClear) triggerShake(50); // 全消超級震動
+                
+                updateScore(linesCleared * 100 + bonusPoints + comboBonus); 
+                
+                if (isPerfectClear) {
+                    showFloatingText("🌟 全畫面消除 +2000!", "#ff33ff");
+                    if (currentMode === 'multi' && conn && conn.open) {
+                        conn.send({type: 'penalty', lines: 4}); // 發送毀滅性打擊 4排垃圾
+                    }
+                } else if (currentMode === 'multi' && linesCleared >= 2 && conn && conn.open) {
                     conn.send({type: 'penalty', lines: linesCleared - 1});
-                    showFloatingText(`💥 攻擊 +${linesCleared - 1}!`, '#00d2ff');
+                    showFloatingText(`猛攻 +${linesCleared - 1}排!`, '#00d2ff');
+                } else if (comboCount > 1) {
+                    showFloatingText(`${comboCount} 連擊!`, "#ff3366");
                 } else if (gotLemon) {
                     showFloatingText("🍋 +500", "#ffcc00");
                 }
                 
-                return gotLemon ? 'bonus' : 'clear';
+                return isPerfectClear ? 'bonus' : (gotLemon ? 'bonus' : 'clear');
+            } else {
+                comboCount = 0;
+                return null;
             }
-            return null;
         }
 
         function checkGameOver() {
