@@ -40,6 +40,20 @@
             cursor: pointer; box-shadow: 0 0 15px #00d2ff; margin-top: 15px;
         }
         button:active { transform: scale(0.95); }
+        
+        #floatingText {
+            position: absolute; 
+            color: #ffcc00; 
+            font-size: 32px; 
+            font-weight: bold; 
+            text-shadow: 0 0 15px #ffcc00, 0 0 5px #fff; 
+            opacity: 0; 
+            pointer-events: none; 
+            z-index: 100; 
+            left: 50%; 
+            top: 40%; 
+            transform: translate(-50%, -50%);
+        }
     </style>
 </head>
 <body>
@@ -47,6 +61,7 @@
     <div id="score">分數: 0</div>
     <div id="gameArea">
         <canvas id="gameCanvas"></canvas>
+        <div id="floatingText">🍋 +500</div>
         <div id="gameOver">
             <h2 style="color: #ff007f;">沒有空間了！</h2>
             <p>最終分數: <span id="finalScore">0</span></p>
@@ -61,17 +76,37 @@
         const finalScoreEl = document.getElementById('finalScore');
         const gameOverEl = document.getElementById('gameOver');
 
-        // ==== 音效系統 (Web Audio API) ==== 
+        // ==== 音效系統 (Web Audio API) 強化版解鎖 ==== 
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         let audioCtx;
 
         function initAudio() {
-            if (!audioCtx) audioCtx = new AudioContext();
-            if (audioCtx.state === 'suspended') audioCtx.resume();
+            if (!audioCtx) {
+                audioCtx = new AudioContext();
+            }
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            if (!audioCtx.unlocked) {
+                // 播放一段無聲音訊強制解鎖 iOS 的硬體限制
+                const buffer = audioCtx.createBuffer(1, 1, 22050);
+                const source = audioCtx.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioCtx.destination);
+                source.start(0);
+                audioCtx.unlocked = true;
+            }
         }
 
+        // 監聽任何觸控或點擊來解鎖音效
+        window.addEventListener('touchstart', initAudio, { once: true });
+        window.addEventListener('mousedown', initAudio, { once: true });
+
         function playSound(type) {
+            initAudio(); // 確保每次播放前都嘗試喚醒
             if (!audioCtx) return;
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            
             const osc = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
             osc.connect(gainNode);
@@ -95,6 +130,15 @@
                 gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
                 osc.start(now);
                 osc.stop(now + 0.3);
+            } else if (type === 'bonus') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.setValueAtTime(1200, now + 0.1);
+                osc.frequency.setValueAtTime(1600, now + 0.2);
+                gainNode.gain.setValueAtTime(0.2, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.4);
+                osc.start(now);
+                osc.stop(now + 0.4);
             } else if (type === 'gameover') {
                 osc.type = 'sawtooth';
                 osc.frequency.setValueAtTime(300, now);
@@ -120,16 +164,17 @@
         canvas.width = maxCanvasWidth;
 
         const GRID_SIZE = 8;
-        const CELL_SIZE = Math.floor(canvas.width / GRID_SIZE); // 讓格子盡可能大！
-        canvas.width = CELL_SIZE * GRID_SIZE; // 補正捨去小數點造成的誤差，完美貼齊
+        const CELL_SIZE = Math.floor(canvas.width / GRID_SIZE);
+        canvas.width = CELL_SIZE * GRID_SIZE; 
 
         const GRID_OFFSET_X = 0; 
         const GRID_OFFSET_Y = 15;
         const TRAY_Y = GRID_OFFSET_Y + (GRID_SIZE * CELL_SIZE) + 40;
         
-        canvas.height = TRAY_Y + (CELL_SIZE * 3.5); // 動態預留底下放方塊的空間
+        canvas.height = TRAY_Y + (CELL_SIZE * 3.5);
 
         let board = [];
+        let itemsBoard = []; // 用來放置檸檬等特殊道具
         let score = 0;
         let trayShapes = [];
         let draggingShape = null;
@@ -149,13 +194,36 @@
             { color: '#ff9933', blocks: [[0,0],[0,1],[0,2],[1,2],[2,2]] },
             { color: '#33ffcc', blocks: [[0,0],[1,0],[2,0],[3,0]] }, 
             { color: '#33ffcc', blocks: [[0,0],[0,1],[0,2],[0,3]] }, 
-            { color: '#ff44aa', blocks: [[0,0],[1,0],[1,1],[2,1]] } // Z shape
+            { color: '#ff44aa', blocks: [[0,0],[1,0],[1,1],[2,1]] }
         ];
 
         function initBoard() {
             board = [];
+            itemsBoard = [];
             for (let r = 0; r < GRID_SIZE; r++) {
                 board[r] = new Array(GRID_SIZE).fill(null);
+                itemsBoard[r] = new Array(GRID_SIZE).fill(null);
+            }
+        }
+
+        function spawnLemon() {
+            let emptyCells = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (board[r][c] === null && itemsBoard[r][c] === null) {
+                        emptyCells.push({r, c});
+                    }
+                }
+            }
+            if (emptyCells.length > 0) {
+                // 機率性生成（確保畫面上一直有至少一顆檸檬）
+                let currentLemons = 0;
+                itemsBoard.forEach(row => row.forEach(i => { if(i==='lemon') currentLemons++ }));
+                
+                if (currentLemons < 2) {
+                    let randomCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                    itemsBoard[randomCell.r][randomCell.c] = 'lemon';
+                }
             }
         }
 
@@ -174,6 +242,7 @@
                     placed: false
                 });
             }
+            spawnLemon(); // 每次補滿托盤時，機率性生成檸檬！
         }
 
         function startGame() {
@@ -191,12 +260,27 @@
             scoreEl.innerText = '分數: ' + score;
         }
 
+        function showFloatingText(text) {
+            const el = document.getElementById('floatingText');
+            el.innerText = text;
+            el.style.transition = 'none';
+            el.style.opacity = '1';
+            el.style.top = '50%';
+            
+            // force DOM reflow
+            void el.offsetWidth;
+
+            el.style.transition = 'all 1.5s cubic-bezier(0.1, 0.8, 0.1, 1)';
+            el.style.opacity = '0';
+            el.style.top = '10%';
+        }
+
         function drawRoundRect(x, y, w, h, radius, color) {
             ctx.fillStyle = color;
             ctx.beginPath();
             ctx.roundRect(x, y, w, h, radius);
             ctx.fill();
-            // inner glow to make it look 3d
+            // inner glow
             ctx.fillStyle = 'rgba(255,255,255,0.2)';
             ctx.beginPath();
             ctx.roundRect(x+2, y+2, w-4, h/3, radius-2);
@@ -211,10 +295,30 @@
                 for (let c = 0; c < GRID_SIZE; c++) {
                     const bx = GRID_OFFSET_X + c * CELL_SIZE;
                     const by = GRID_OFFSET_Y + r * CELL_SIZE;
+                    
+                    // 1. 畫空格
+                    if (!board[r][c]) {
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 4, '#0f172a');
+                    }
+                    
+                    // 2. 如果底下有檸檬，畫出來
+                    if (itemsBoard[r][c] === 'lemon') {
+                        ctx.font = (CELL_SIZE * 0.6) + "px Arial";
+                        ctx.textAlign = "center";
+                        ctx.textBaseline = "middle";
+                        ctx.fillText("🍋", bx + CELL_SIZE/2 - 1, by + CELL_SIZE/2 - 1);
+                    }
+
+                    // 3. 畫實體方塊
                     if (board[r][c]) {
                         drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, board[r][c]);
-                    } else {
-                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 4, '#0f172a');
+                        
+                        // 讓方塊覆蓋上去後，檸檬也能透出來給玩家看到 (視覺提示)
+                        if (itemsBoard[r][c] === 'lemon') {
+                            ctx.font = (CELL_SIZE * 0.45) + "px Arial";
+                            ctx.fillStyle = 'rgba(255,255,255,0.8)';
+                            ctx.fillText("🍋", bx + CELL_SIZE/2 - 1, by + CELL_SIZE/2 - 1);
+                        }
                     }
                 }
             }
@@ -225,11 +329,10 @@
                 drawShape(ts.data, ts.x, ts.y, ts.scale);
             });
 
-            // Draw dragging shape & shadow (強力磁吸對齊網格畫法)
+            // Draw dragging shape & shadow
             if (draggingShape) {
                 let p = getPivotPosition(draggingShape);
                 if (canPlace(draggingShape.data, p.col, p.row)) {
-                    // 若可放置，畫出「實體尺寸的強烈暗示陰影」
                     draggingShape.data.blocks.forEach(b => {
                         const bx = GRID_OFFSET_X + (p.col + b[0]) * CELL_SIZE;
                         const by = GRID_OFFSET_Y + (p.row + b[1]) * CELL_SIZE;
@@ -268,7 +371,7 @@
         }
 
         function handleStart(e) {
-            initAudio(); // 確保蘋果系統解鎖音效
+            initAudio(); 
             if (e.cancelable) e.preventDefault();
             if (gameOverEl.classList.contains('visible')) return;
             const pos = getEventPos(e);
@@ -276,13 +379,12 @@
             for (let i = trayShapes.length - 1; i >= 0; i--) {
                 const ts = trayShapes[i];
                 if (ts.placed) continue;
-                // Hitbox logic
                 if (Math.abs(pos.x - ts.x) < 50 && Math.abs(pos.y - ts.y) < 50) {
-                    playSound('pickup'); // 接觸音效
+                    playSound('pickup'); 
                     draggingShape = ts;
                     ts.scale = 1.0; 
                     dragOffsetX = 0; 
-                    dragOffsetY = -(CELL_SIZE * 3); // 抬高三個格子的距離，完全閃開大拇指盲區！
+                    dragOffsetY = -(CELL_SIZE * 3); 
                     ts.x = pos.x + dragOffsetX;
                     ts.y = pos.y + dragOffsetY;
                     draw();
@@ -321,14 +423,16 @@
 
             if (canPlace(draggingShape.data, p.col, p.row)) {
                 placeShape(draggingShape.data, p.col, p.row);
-                playSound('drop'); // 放下音效
+                playSound('drop'); 
                 draggingShape.placed = true;
                 draggingShape = null;
                 updateScore(10); 
                 
-                let clears = checkClears();
-                if(clears > 0) {
-                    setTimeout(() => playSound('clear'), 150); // 消除音效 (帶點延遲更有打擊感)
+                let result = checkClears();
+                if(result === 'bonus') {
+                    setTimeout(() => playSound('bonus'), 100);
+                } else if (result === 'clear') {
+                    setTimeout(() => playSound('clear'), 150);
                 }
 
                 if (trayShapes.every(ts => ts.placed)) {
@@ -337,7 +441,7 @@
                 
                 setTimeout(() => {
                     if (checkGameOver()) {
-                        playSound('gameover'); // 結束音效
+                        playSound('gameover'); 
                         finalScoreEl.innerText = score;
                         gameOverEl.classList.add('visible');
                     } else {
@@ -345,7 +449,6 @@
                     }
                 }, 50);
             } else {
-                // Return to tray
                 draggingShape.x = draggingShape.homeX;
                 draggingShape.y = draggingShape.homeY;
                 draggingShape.scale = 0.55;
@@ -385,18 +488,38 @@
                 if (colFull) colsToClear.push(c);
             }
 
+            let clearedCells = new Set();
             rowsToClear.forEach(r => {
-                for (let c = 0; c < GRID_SIZE; c++) board[r][c] = null;
+                for (let c = 0; c < GRID_SIZE; c++) clearedCells.add(`${r},${c}`);
             });
             colsToClear.forEach(c => {
-                for (let r = 0; r < GRID_SIZE; r++) board[r][c] = null;
+                for (let r = 0; r < GRID_SIZE; r++) clearedCells.add(`${r},${c}`);
             });
 
-            const totalClears = rowsToClear.length + colsToClear.length;
-            if (totalClears > 0) {
-                updateScore(totalClears * 100); 
+            if (clearedCells.size > 0) {
+                let bonusPoints = 0;
+                let gotLemon = false;
+
+                clearedCells.forEach(key => {
+                    let [r, c] = key.split(',').map(Number);
+                    board[r][c] = null;
+                    if (itemsBoard[r][c] === 'lemon') {
+                        bonusPoints += 500;
+                        itemsBoard[r][c] = null; // Consume the lemon
+                        gotLemon = true;
+                    }
+                });
+
+                const linesCleared = rowsToClear.length + colsToClear.length;
+                updateScore(linesCleared * 100 + bonusPoints); 
+                
+                if (gotLemon) {
+                    showFloatingText("🍋 +500");
+                    return 'bonus';
+                }
+                return 'clear';
             }
-            return totalClears;
+            return null;
         }
 
         function checkGameOver() {
