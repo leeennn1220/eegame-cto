@@ -2,7 +2,7 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Block Blast - eegame</title>
     <style>
         body {
@@ -10,14 +10,16 @@
             background-color: #1a1a2e;
             color: #fff;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            display: flex; flex-direction: column; align-items: center;
+            display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
             touch-action: none; /* Prevent scroll on touch */
             overflow: hidden;
             user-select: none;
+            -webkit-user-select: none;
+            height: 100vh;
         }
         h1 { margin: 15px 0 5px 0; color: #00d2ff; font-size: 24px; text-shadow: 0 0 10px #00d2ff; }
         #score { font-size: 20px; font-weight: bold; color: #ff007f; margin-bottom: 15px; }
-        #gameArea { position: relative; }
+        #gameArea { position: relative; display: flex; justify-content: center; width: 100%; }
         canvas {
             display: block;
             background-color: #16213e;
@@ -44,12 +46,11 @@
     <h1>🟩 方塊爆破 (Block Blast)</h1>
     <div id="score">分數: 0</div>
     <div id="gameArea">
-        <!-- 360x520 allows for an 8x8 grid (e.g. 320x320) + tray area below -->
-        <canvas id="gameCanvas" width="360" height="520"></canvas>
+        <canvas id="gameCanvas"></canvas>
         <div id="gameOver">
             <h2 style="color: #ff007f;">沒有空間了！</h2>
             <p>最終分數: <span id="finalScore">0</span></p>
-            <button onclick="startGame()">再玩一局</button>
+            <button onclick="startGame()">再玩一局🎶</button>
         </div>
     </div>
 
@@ -60,11 +61,73 @@
         const finalScoreEl = document.getElementById('finalScore');
         const gameOverEl = document.getElementById('gameOver');
 
+        // ==== 音效系統 (Web Audio API) ==== 
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx;
+
+        function initAudio() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        function playSound(type) {
+            if (!audioCtx) return;
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            const now = audioCtx.currentTime;
+            
+            if (type === 'drop') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(600, now);
+                osc.frequency.exponentialRampToValueAtTime(200, now + 0.1);
+                gainNode.gain.setValueAtTime(0.15, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.1);
+                osc.start(now);
+                osc.stop(now + 0.1);
+            } else if (type === 'clear') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(400, now);
+                osc.frequency.setValueAtTime(600, now + 0.1);
+                osc.frequency.setValueAtTime(1000, now + 0.2);
+                gainNode.gain.setValueAtTime(0.15, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'gameover') {
+                osc.type = 'sawtooth';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(50, now + 0.6);
+                gainNode.gain.setValueAtTime(0.2, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.6);
+                osc.start(now);
+                osc.stop(now + 0.6);
+            } else if (type === 'pickup') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(400, now + 0.05);
+                gainNode.gain.setValueAtTime(0.05, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.05);
+                osc.start(now);
+                osc.stop(now + 0.05);
+            }
+        }
+
+        // ==== 滿版響應式版面計算 ====
+        const screenMargin = 20;
+        let maxCanvasWidth = Math.min(window.innerWidth - screenMargin, 400); 
+        canvas.width = maxCanvasWidth;
+
         const GRID_SIZE = 8;
-        const CELL_SIZE = 40;
-        const GRID_OFFSET_X = (canvas.width - (GRID_SIZE * CELL_SIZE)) / 2;
+        const CELL_SIZE = Math.floor(canvas.width / GRID_SIZE); // 讓格子盡可能大！
+        canvas.width = CELL_SIZE * GRID_SIZE; // 補正捨去小數點造成的誤差，完美貼齊
+
+        const GRID_OFFSET_X = 0; 
         const GRID_OFFSET_Y = 15;
         const TRAY_Y = GRID_OFFSET_Y + (GRID_SIZE * CELL_SIZE) + 40;
+        
+        canvas.height = TRAY_Y + (CELL_SIZE * 3.5); // 動態預留底下放方塊的空間
 
         let board = [];
         let score = 0;
@@ -104,9 +167,9 @@
                 trayShapes.push({
                     data: sData,
                     homeX: (spacing * i) + spacing / 2,
-                    homeY: TRAY_Y + 50,
+                    homeY: TRAY_Y + (CELL_SIZE * 1.5),
                     x: (spacing * i) + spacing / 2,
-                    y: TRAY_Y + 50,
+                    y: TRAY_Y + (CELL_SIZE * 1.5),
                     scale: 0.55,
                     placed: false
                 });
@@ -114,6 +177,7 @@
         }
 
         function startGame() {
+            initAudio();
             initBoard();
             score = 0;
             updateScore(0);
@@ -150,7 +214,7 @@
                     if (board[r][c]) {
                         drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, board[r][c]);
                     } else {
-                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, '#0f172a');
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 4, '#0f172a');
                     }
                 }
             }
@@ -161,15 +225,15 @@
                 drawShape(ts.data, ts.x, ts.y, ts.scale);
             });
 
-            // Draw current dragging shape and hover shadow
+            // Draw dragging shape & shadow (強力磁吸對齊網格畫法)
             if (draggingShape) {
                 let p = getPivotPosition(draggingShape);
                 if (canPlace(draggingShape.data, p.col, p.row)) {
-                    // Draw shadow
+                    // 若可放置，畫出「實體尺寸的強烈暗示陰影」
                     draggingShape.data.blocks.forEach(b => {
                         const bx = GRID_OFFSET_X + (p.col + b[0]) * CELL_SIZE;
                         const by = GRID_OFFSET_Y + (p.row + b[1]) * CELL_SIZE;
-                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, 'rgba(255,255,255,0.2)');
+                        drawRoundRect(bx, by, CELL_SIZE-2, CELL_SIZE-2, 6, 'rgba(255,255,255,0.3)');
                     });
                 }
                 drawShape(draggingShape.data, draggingShape.x, draggingShape.y, draggingShape.scale);
@@ -204,6 +268,7 @@
         }
 
         function handleStart(e) {
+            initAudio(); // 確保蘋果系統解鎖音效
             if (e.cancelable) e.preventDefault();
             if (gameOverEl.classList.contains('visible')) return;
             const pos = getEventPos(e);
@@ -213,10 +278,11 @@
                 if (ts.placed) continue;
                 // Hitbox logic
                 if (Math.abs(pos.x - ts.x) < 50 && Math.abs(pos.y - ts.y) < 50) {
+                    playSound('pickup'); // 接觸音效
                     draggingShape = ts;
-                    ts.scale = 1.0; // 放大到與網格完全同等比例 1:1
-                    dragOffsetX = 0; // 強制對齊手指 X 軸中心
-                    dragOffsetY = -80; // 把方塊大幅往上提，避免被手指遮擋視線
+                    ts.scale = 1.0; 
+                    dragOffsetX = 0; 
+                    dragOffsetY = -(CELL_SIZE * 3); // 抬高三個格子的距離，完全閃開大拇指盲區！
                     ts.x = pos.x + dragOffsetX;
                     ts.y = pos.y + dragOffsetY;
                     draw();
@@ -255,11 +321,15 @@
 
             if (canPlace(draggingShape.data, p.col, p.row)) {
                 placeShape(draggingShape.data, p.col, p.row);
+                playSound('drop'); // 放下音效
                 draggingShape.placed = true;
                 draggingShape = null;
                 updateScore(10); 
                 
-                checkClears();
+                let clears = checkClears();
+                if(clears > 0) {
+                    setTimeout(() => playSound('clear'), 150); // 消除音效 (帶點延遲更有打擊感)
+                }
 
                 if (trayShapes.every(ts => ts.placed)) {
                     spawnTray();
@@ -267,14 +337,15 @@
                 
                 setTimeout(() => {
                     if (checkGameOver()) {
+                        playSound('gameover'); // 結束音效
                         finalScoreEl.innerText = score;
                         gameOverEl.classList.add('visible');
                     } else {
-                        draw(); // redraw fresh hints occasionally
+                        draw(); 
                     }
                 }, 50);
             } else {
-                // Snap back to tray
+                // Return to tray
                 draggingShape.x = draggingShape.homeX;
                 draggingShape.y = draggingShape.homeY;
                 draggingShape.scale = 0.55;
@@ -325,6 +396,7 @@
             if (totalClears > 0) {
                 updateScore(totalClears * 100); 
             }
+            return totalClears;
         }
 
         function checkGameOver() {
